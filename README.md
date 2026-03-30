@@ -90,14 +90,3 @@ app/
 └── tests/            # Test suite
 ```
 
-## Interview Talking Points
-
-> "Routers stay thin; services own logic."
-
-> "Factory avoids deep inheritance trees and keeps construction logic centralized."
-
-> "Decorator pattern keeps core logic clean and makes behavior composable."
-
-> "Services have no FastAPI imports - I can reuse logic in workers, cron jobs, or async consumers."
-
-> "Async improves throughput but CPU tasks must move to workers."
