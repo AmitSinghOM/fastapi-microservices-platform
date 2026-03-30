@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./app.db
+      - DEBUG=false
+    volumes:
+      - ./app:/app/app
+    restart: unless-stopped
