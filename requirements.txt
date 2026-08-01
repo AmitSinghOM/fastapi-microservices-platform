@@ -1,10 +1,19 @@
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-pydantic[email]==2.5.3
-pydantic-settings==2.1.0
-sqlalchemy[asyncio]==2.0.25
-aiosqlite==0.19.0
-httpx==0.26.0
-pytest==7.4.4
-pytest-asyncio==0.23.3
-python-multipart==0.0.6
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic[email]==2.10.4
+pydantic-settings==2.7.1
+sqlalchemy[asyncio]==2.0.36
+aiosqlite==0.20.0
+httpx==0.28.1
+pytest==8.3.4
+pytest-asyncio==0.25.0
+python-multipart==0.0.20
+
+# Password hashing: bcrypt via passlib, replacing unsalted SHA-256.
+# bcrypt is pinned below 4.1 because passlib 1.7.4 reads bcrypt.__about__,
+# which 4.1 removed.
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+
+# Access tokens
+PyJWT==2.10.1

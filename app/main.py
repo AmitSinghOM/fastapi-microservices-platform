@@ -3,7 +3,8 @@ from fastapi import FastAPI
 
 from app.config import get_settings
 from app.db import init_db
-from app.routers import users_router, items_router
+from app.middleware import RateLimitMiddleware
+from app.routers import auth_router, users_router, items_router
 from app.exception_handlers import register_exception_handlers
 
 
@@ -30,7 +31,11 @@ def create_app() -> FastAPI:
     # Register global exception handlers
     register_exception_handlers(app)
     
+    # Rate limit unauthenticated endpoints (login, registration)
+    app.add_middleware(RateLimitMiddleware)
+    
     # Register routers
+    app.include_router(auth_router)
     app.include_router(users_router)
     app.include_router(items_router)
     

@@ -1,13 +1,18 @@
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-import hashlib
 
 from app.services.base import BaseService
 from app.schemas.user import UserCreate, UserUpdate
 from app.decorators import log_execution, retry
 from app.models import User
 from app.exceptions import NotFoundError, AlreadyExistsError
+from app.security import hash_password, needs_rehash, verify_password
+
+# A real bcrypt hash of a value nobody can supply, verified against when the
+# email is unknown so that path costs about the same as a genuine check.
+_TIMING_DECOY_HASH = hash_password("timing-decoy-not-a-real-password")
 
 
 class UserService(BaseService):
@@ -44,15 +49,21 @@ class UserService(BaseService):
         return list(result.scalars().all())
     
     @log_execution
-    @retry(max_attempts=3, delay=0.5)
+    @retry(max_attempts=3, delay=0.5, exceptions=(OperationalError, TimeoutError))
     async def create(self, user_data: UserCreate) -> User:
+        """Create a user.
+        
+        Retries cover transient connection failures only. Retrying every
+        exception meant AlreadyExistsError was retried three times pointlessly,
+        and — worse — a failure after a successful commit was retried too,
+        risking duplicate rows.
+        """
         # Business rule: check for existing email
         existing = await self.get_by_email(user_data.email)
         if existing:
             raise AlreadyExistsError("User", "email", user_data.email)
         
-        # Hash password (simplified - use proper hashing in production)
-        hashed_password = hashlib.sha256(user_data.password.encode()).hexdigest()
+        hashed_password = hash_password(user_data.password)
         
         user = User(
             email=user_data.email,
@@ -65,6 +76,34 @@ class UserService(BaseService):
         self.db.add(user)
         await self.db.commit()
         await self.db.refresh(user)
+        return user
+    
+    @log_execution
+    async def authenticate(self, email: str, password: str) -> User | None:
+        """Verify credentials, returning the user or None.
+        
+        Callers must not distinguish "no such email" from "wrong password" in
+        their response, or this becomes an email enumeration oracle.
+        
+        A successful login against a legacy unsalted SHA-256 hash transparently
+        upgrades the stored hash to bcrypt, so the old format drains away as
+        users sign in rather than needing a forced reset.
+        """
+        user = await self.get_by_email(email)
+        if user is None:
+            # Spend comparable time on an unknown email so response timing
+            # does not reveal which addresses are registered.
+            verify_password(password, _TIMING_DECOY_HASH)
+            return None
+        
+        if not verify_password(password, user.hashed_password):
+            return None
+        
+        if needs_rehash(user.hashed_password):
+            user.hashed_password = hash_password(password)
+            await self.db.commit()
+            await self.db.refresh(user)
+        
         return user
     
     @log_execution
