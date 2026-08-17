@@ -1,19 +1,10 @@
-"""Rate limiting.
-
-Registration and login had no limit, so both were free to hammer: unlimited
-password guesses against /auth/login, and unlimited account creation.
-
-This is a fixed-window in-memory limiter. That is honest about its scope — it
-counts per process, so N replicas allow N times the limit, and the counters
-reset on restart. It raises the cost of scripted guessing on a single-instance
-deployment. A multi-instance deployment needs a shared counter in Redis, or
-limiting at the ingress.
-"""
+"""HTTP request context and bounded single-process rate limiting."""
 
 from __future__ import annotations
 
+import re
 import time
-from collections import defaultdict
+import uuid
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -21,33 +12,58 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import get_settings
 
-# Endpoints reachable without credentials, so the only thing standing between
-# an attacker and unlimited attempts.
-RATE_LIMITED_PATHS = (
-    "/auth/login",
-    "/users/",
-)
-
-
-# Counters live at module scope so they can be inspected and cleared, which
-# tests need in order to stay independent of each other.
-_HITS: dict[str, tuple[float, int]] = defaultdict(lambda: (0.0, 0))
+RATE_LIMITED_PATHS = ("/auth/login", "/users/")
+_HITS: dict[str, tuple[float, int]] = {}
+_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
 
 def reset_rate_limits() -> None:
-    """Clear all rate-limit counters."""
+    """Clear process-local counters, primarily for test isolation."""
     _HITS.clear()
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Fixed-window per-client limit on unauthenticated endpoints."""
+class RequestContextMiddleware(BaseHTTPMiddleware):
+    """Add correlation, timing, and baseline browser-security headers."""
 
-    def __init__(self, app, requests: int | None = None,
-                 window_seconds: int | None = None):
+    async def dispatch(self, request: Request, call_next):
+        supplied_id = request.headers.get("X-Request-ID", "")
+        request_id = (
+            supplied_id
+            if _REQUEST_ID_PATTERN.fullmatch(supplied_id)
+            else str(uuid.uuid4())
+        )
+        request.state.request_id = request_id
+        started = time.perf_counter()
+
+        response = await call_next(request)
+        elapsed = time.perf_counter() - started
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Process-Time"] = f"{elapsed:.6f}"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Bounded fixed-window limiter for unauthenticated endpoints.
+
+    This protects a single process. Multi-replica deployments should enforce
+    the same policy at a trusted ingress or in a shared atomic data store.
+    """
+
+    def __init__(
+        self,
+        app,
+        requests: int | None = None,
+        window_seconds: int | None = None,
+        max_entries: int | None = None,
+    ):
         super().__init__(app)
         settings = get_settings()
         self.requests = requests or settings.rate_limit_requests
         self.window = window_seconds or settings.rate_limit_window_seconds
+        self.max_entries = max_entries or settings.rate_limit_max_entries
         self._hits = _HITS
 
     async def dispatch(self, request: Request, call_next):
@@ -64,40 +80,52 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "error": {
                         "code": "RATE_LIMITED",
                         "message": (
-                            f"Too many requests. Try again in "
-                            f"{retry_after}s."),
+                            f"Too many requests. Try again in {retry_after}s."
+                        ),
                         "details": {},
                     }
                 },
             )
         return await call_next(request)
 
-    def _is_limited(self, request: Request) -> bool:
-        if request.method == "POST" and request.url.path in RATE_LIMITED_PATHS:
-            return True
-        return False
+    @staticmethod
+    def _is_limited(request: Request) -> bool:
+        return (
+            request.method == "POST"
+            and request.url.path in RATE_LIMITED_PATHS
+        )
 
     def _check(self, key: str) -> tuple[bool, int]:
         now = time.monotonic()
-        window_start, count = self._hits[key]
-
-        if now - window_start >= self.window:
+        current = self._hits.get(key)
+        if current is None or now - current[0] >= self.window:
+            self._make_room(now, key)
             self._hits[key] = (now, 1)
             return True, 0
 
+        window_start, count = current
         if count >= self.requests:
-            return False, max(1, int(self.window - (now - window_start)))
+            retry_after = max(1, int(self.window - (now - window_start)))
+            return False, retry_after
 
         self._hits[key] = (window_start, count + 1)
         return True, 0
 
+    def _make_room(self, now: float, incoming_key: str) -> None:
+        if incoming_key in self._hits or len(self._hits) < self.max_entries:
+            return
+        expired = [
+            key
+            for key, (window_start, _) in self._hits.items()
+            if now - window_start >= self.window
+        ]
+        for key in expired:
+            self._hits.pop(key, None)
+        if len(self._hits) >= self.max_entries:
+            oldest = min(self._hits, key=lambda key: self._hits[key][0])
+            self._hits.pop(oldest, None)
+
     @staticmethod
     def _client_key(request: Request) -> str:
-        """Identify the client.
-
-        X-Forwarded-For is deliberately ignored: it is caller-supplied, so
-        trusting it lets an attacker rotate the header and bypass the limit
-        entirely. Behind a proxy, configure uvicorn's --forwarded-allow-ips so
-        request.client reflects the real peer.
-        """
+        """Use the ASGI peer; proxy trust must be configured at the server."""
         return request.client.host if request.client else "unknown"

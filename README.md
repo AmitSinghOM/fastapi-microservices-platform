@@ -1,145 +1,162 @@
-# FastAPI Microservices Platform
+# FastAPI Service Platform
 
-Production-ready FastAPI backend demonstrating scalable architecture patterns.
+An async, production-oriented FastAPI reference service with a clear router →
+service → persistence architecture. It is one deployable service today, not a
+distributed microservice system; the boundaries are designed so domains can be
+split later when operational needs justify it.
+
+## Included capabilities
+
+- Async FastAPI endpoints and SQLAlchemy 2 sessions
+- OAuth2 password login with short-lived signed JWT bearer tokens
+- bcrypt password hashing and transparent migration of legacy SHA-256 hashes
+- Per-user authorization for account and item operations
+- Strict Pydantic v2 request/response contracts and standardized error bodies
+- Fixed-precision item prices, relational checks, and cascading ownership
+- Stable offset pagination (`skip >= 0`, `1 <= limit <= 100`)
+- Request IDs, process timing, gzip, trusted-host validation, optional CORS,
+  and baseline browser-security headers
+- Bounded login/registration rate limiting for a single process
+- Liveness (`/livez`), database readiness (`/readyz`), and compatibility
+  health (`/health`) probes
+- Swagger UI, ReDoc, and OpenAPI metadata, optionally disabled in deployment
+- Graceful database pool shutdown and persistent Docker Compose data
+- Consistent 401 `WWW-Authenticate: Bearer` challenges
 
 ## Architecture
 
-```
+```text
 Client
-  │
-  ▼
-FastAPI App
-  ├── Routers (API layer - thin, delegates to services)
-  ├── Services (Business logic - reusable, testable)
-  ├── Decorators (Cross-cutting: logging, retry, auth)
-  ├── Factory (Service creation - loose coupling)
-  ├── Schemas (Pydantic validation - strict contracts)
-  └── Tests (Unit + Integration)
+  └─ FastAPI application
+      ├─ middleware      request context, hosts, CORS, gzip, rate limiting
+      ├─ routers         HTTP contracts and dependency injection
+      ├─ services        reusable business and transaction logic
+      ├─ schemas         Pydantic validation and serialization
+      └─ persistence     async SQLAlchemy models and sessions
 ```
 
-## Design Decisions
+Routers stay thin, services do not import FastAPI, and request-scoped sessions
+are supplied through dependencies. Non-idempotent database writes are not
+retried automatically: replaying an ambiguous commit can create duplicate
+state. Retry only transient failures at an idempotent boundary with backoff,
+jitter, and retry-storm protection.
 
-### 1. Thin Routers
-Routers only accept requests, validate input, and call services. No business logic.
+## Quick start
 
-### 2. Service Layer
-- One service per domain (User, Item)
-- No FastAPI imports - reusable in workers, cron jobs, async consumers
-- Decorated with logging and retry logic
-
-### 3. Factory Pattern (not inheritance)
-- Loose coupling between services
-- Easy mocking for tests
-- Centralized construction logic
-
-### 4. Decorator Pattern
-Cross-cutting concerns without polluting business logic:
-- `@log_execution` - timing and logging
-- `@retry` - exponential backoff
-- `@require_auth` - authorization checks
-
-### 5. Async-First
-- Async endpoints and DB operations
-- Improves throughput for IO-bound work
-- CPU-heavy tasks should move to workers
-
-### 6. Pydantic Schemas
-Strict contracts between frontend and backend with auto-validation.
-
-## Authentication
-
-All endpoints require a bearer token except registration (`POST /users/`) and
-`GET /health`.
+Requires Python 3.11 or newer.
 
 ```bash
-# 1. Register
-curl -X POST localhost:8000/users/ -H 'Content-Type: application/json' \
-  -d '{"email":"a@b.com","name":"A","password":"a-good-long-password"}'
-
-# 2. Log in (form-encoded, OAuth2 password flow)
-curl -X POST localhost:8000/auth/login \
-  -d 'username=a@b.com&password=a-good-long-password'
-# -> {"access_token":"...","token_type":"bearer"}
-
-# 3. Call an endpoint
-curl localhost:8000/items/ -H 'Authorization: Bearer <token>'
-```
-
-`SECRET_KEY` must be set in any real deployment. Left unset, the app generates
-a random key per process and warns on startup, so tokens stop working after a
-restart:
-
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-### Authorization model
-
-A caller may only read or modify their own records. Ownership is taken from the
-verified token, never from a request parameter — an `owner_id` in the query
-string is ignored.
-
-Accessing another user's record returns `404`, not `403`. A `403` would confirm
-the id exists, which is enough to enumerate the table.
-
-### Passwords
-
-bcrypt with a cost of 12, salted per hash. Accounts created before this change
-used unsalted SHA-256; those hashes still verify, and each one is transparently
-upgraded to bcrypt the first time its owner logs in, so no password reset is
-needed.
-
-### Rate limiting
-
-`POST /auth/login` and `POST /users/` are limited per client IP
-(`RATE_LIMIT_REQUESTS` per `RATE_LIMIT_WINDOW_SECONDS`). The counter is
-in-process, so N replicas allow N times the limit — a multi-instance deployment
-should limit at the ingress or move the counter to Redis.
-
-`X-Forwarded-For` is deliberately ignored, since a caller can set it freely and
-defeat the limit. Behind a trusted proxy, run uvicorn with
-`--forwarded-allow-ips` so `request.client` reflects the real peer.
-
-## Quick Start
-
-```bash
-# Install dependencies
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# Run locally
+cp .env.example .env
 uvicorn app.main:app --reload
-
-# Run with Docker
-docker-compose up --build
 ```
+
+Open:
+
+- API index: <http://localhost:8000/>
+- Swagger UI: <http://localhost:8000/docs>
+- ReDoc: <http://localhost:8000/redoc>
+- OpenAPI JSON: <http://localhost:8000/openapi.json>
+
+## Authentication example
+
+```bash
+curl -X POST http://localhost:8000/users/ \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"user@example.com","name":"Example","password":"long-password"}'
+
+curl -X POST http://localhost:8000/auth/login \
+  -d 'username=user@example.com&password=long-password'
+
+curl http://localhost:8000/items/ \
+  -H 'Authorization: Bearer <access-token>'
+```
+
+Registration and login intentionally return indistinguishable authentication
+failures where applicable. Resource ownership always comes from the verified
+token, never from a caller-provided owner ID.
+
+## Configuration
+
+Copy `.env.example` and configure environment variables. Important settings:
+
+| Variable | Purpose |
+|---|---|
+| `ENVIRONMENT` | `development`, `test`, `staging`, or `production` |
+| `SECRET_KEY` | JWT signing key; required in staging/production, minimum 32 characters |
+| `DATABASE_URL` | SQLAlchemy async database URL |
+| `AUTO_CREATE_SCHEMA` | Local convenience; must be `false` when deployed |
+| `ALLOWED_HOSTS` | JSON array accepted by trusted-host middleware |
+| `CORS_ORIGINS` | JSON array of explicit browser origins; empty disables CORS |
+| `DOCS_ENABLED` | Enables Swagger, ReDoc, and OpenAPI endpoints |
+| `RATE_LIMIT_*` | Single-process unauthenticated endpoint limits |
+
+Staging/production settings fail closed when the secret is absent, debug is on
+in production, schema auto-creation is enabled, or allowed hosts are empty.
+Use versioned migrations before deployment; `create_all` is retained only for
+local development and tests.
+
+## Docker Compose
+
+```bash
+# Set a stable key so issued tokens survive container restarts.
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+docker compose up --build
+```
+
+The Compose setup stores SQLite data in the named `api-data` volume instead of
+inside the replaceable container. SQLite is suitable for this local setup; use
+a managed production database and a compatible async driver for multi-instance
+deployments.
+
+## Health and operations
+
+- `/livez`: process liveness; does not touch dependencies
+- `/readyz`: bounded database connectivity probe; returns 503 when unavailable
+- `/health`: deprecated compatibility liveness endpoint
+- `X-Request-ID`: accepted when safe, otherwise generated; echoed in responses
+- `X-Process-Time`: application processing time in seconds
+
+The built-in rate limiter is deliberately bounded but process-local. Multiple
+workers or replicas must use an atomic shared limiter or enforce the policy at
+a trusted ingress. Configure proxy trust at the ASGI server; arbitrary
+`X-Forwarded-For` values are not trusted by application code.
 
 ## Testing
 
 ```bash
-# Run all tests
-pytest app/tests/ -v
-
-# Run with coverage
-pytest app/tests/ --cov=app
+pytest app/tests -q
+python -m compileall -q app
 ```
 
-## API Docs
+The current suite covers authentication, token handling, account isolation,
+item ownership, CRUD operations, and rate limiting.
 
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+## Project structure
 
-## Project Structure
-
-```
+```text
 app/
-├── main.py           # App factory
-├── config.py         # Settings
-├── db.py             # Database setup
-├── models.py         # SQLAlchemy models
-├── dependencies.py   # FastAPI DI
-├── routers/          # API endpoints
-├── services/         # Business logic
-├── decorators/       # Cross-cutting concerns
-├── schemas/          # Pydantic models
-└── tests/            # Test suite
+├── main.py               application factory, middleware, health endpoints
+├── config.py             environment-aware validated settings
+├── db.py                 async engine, sessions, readiness, lifecycle
+├── models.py             SQLAlchemy models and relational constraints
+├── auth.py               bearer-token dependencies
+├── security.py           password hashing and JWT operations
+├── exception_handlers.py consistent API errors
+├── middleware.py         request context and rate limiting
+├── routers/              auth, user, and item HTTP APIs
+├── schemas/              Pydantic request/response contracts
+├── services/             domain and transaction logic
+└── tests/                async API tests
 ```
+
+## Production boundaries
+
+No platform can meaningfully provide “all FastAPI features.” This repository
+now provides a strong service baseline. Before a real production launch, add
+versioned migrations (for example, Alembic), a production database, centralized
+metrics/tracing/log aggregation, shared rate limiting, secret-manager-backed
+key rotation, and refresh-token/revocation flows according to the product’s
+requirements.

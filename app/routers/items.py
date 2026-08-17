@@ -8,7 +8,9 @@ query string deleted anyone's item. The check was opt-in by the caller.
 Ownership now comes from the authenticated user and is always enforced.
 """
 
-from fastapi import APIRouter, Depends, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Path, Query, status
 
 from app.auth import get_current_active_user
 from app.dependencies import get_item_service
@@ -19,8 +21,19 @@ from app.services.item_service import ItemService
 
 router = APIRouter(prefix="/items", tags=["items"])
 
+ItemId = Annotated[int, Path(ge=1)]
+Offset = Annotated[int, Query(ge=0)]
+PageSize = Annotated[
+    int,
+    Query(ge=1, le=100),
+]
 
-@router.post("/", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
+
+@router.post(
+    "/",
+    response_model=ItemResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_item(
     item: ItemCreate,
     current_user: User = Depends(get_current_active_user),
@@ -32,29 +45,22 @@ async def create_item(
 
 @router.get("/", response_model=list[ItemResponse])
 async def get_items(
-    skip: int = 0,
-    limit: int = 100,
+    skip: Offset = 0,
+    limit: PageSize = 100,
     current_user: User = Depends(get_current_active_user),
     service: ItemService = Depends(get_item_service),
 ):
-    """List the authenticated user's items.
-
-    This used to return every item belonging to every user.
-    """
+    """List a stable, bounded page of the authenticated user's items."""
     return await service.get_by_owner(current_user.id, skip=skip, limit=limit)
 
 
 @router.get("/{item_id}", response_model=ItemResponse)
 async def get_item(
-    item_id: int,
+    item_id: ItemId,
     current_user: User = Depends(get_current_active_user),
     service: ItemService = Depends(get_item_service),
 ):
-    """Get one of the authenticated user's items.
-
-    Another user's item reports 404 rather than 403: a 403 would confirm the id
-    exists, which is enough to enumerate the table.
-    """
+    """Get one item owned by the authenticated user."""
     item = await service.get_by_id(item_id)
     if not item or item.owner_id != current_user.id:
         raise NotFoundError("Item", item_id)
@@ -63,7 +69,7 @@ async def get_item(
 
 @router.patch("/{item_id}", response_model=ItemResponse)
 async def update_item(
-    item_id: int,
+    item_id: ItemId,
     item_data: ItemUpdate,
     current_user: User = Depends(get_current_active_user),
     service: ItemService = Depends(get_item_service),
@@ -77,7 +83,7 @@ async def update_item(
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item(
-    item_id: int,
+    item_id: ItemId,
     current_user: User = Depends(get_current_active_user),
     service: ItemService = Depends(get_item_service),
 ):

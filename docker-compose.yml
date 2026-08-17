@@ -1,13 +1,29 @@
-version: '3.8'
-
 services:
   api:
     build: .
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./app.db
-      - DEBUG=false
+      ENVIRONMENT: development
+      DATABASE_URL: sqlite+aiosqlite:////data/app.db
+      AUTO_CREATE_SCHEMA: "true"
+      DEBUG: "false"
+      SECRET_KEY: ${SECRET_KEY:-}
     volumes:
-      - ./app:/app/app
+      - api-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/readyz')
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
     restart: unless-stopped
+
+volumes:
+  api-data:
