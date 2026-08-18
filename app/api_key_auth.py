@@ -6,6 +6,7 @@ from fastapi import Depends, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api_key_usage import api_key_usage_tracker
 from app.config import get_settings
 from app.db import get_db
 from app.exceptions import UnauthorizedError
@@ -39,6 +40,7 @@ async def get_api_key_project(
     project = await db.get(Project, api_key.project_id)
     if project is None or not project.is_active:
         raise invalid_api_key()
-    api_key.last_used_at = datetime.now(timezone.utc)
-    await db.commit()
+    await api_key_usage_tracker.record(
+        api_key.id, datetime.now(timezone.utc)
+    )
     return project

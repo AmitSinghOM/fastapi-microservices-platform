@@ -375,13 +375,23 @@ class WebhookService:
                 )
             return existing
         now = utcnow()
+        event_public_id = str(uuid4())
+        canonical_envelope = canonical_json(
+            {
+                "id": event_public_id,
+                "type": event_type,
+                "created_at": now.isoformat(),
+                "data": payload,
+            }
+        )
         event = Event(
-            public_id=str(uuid4()),
+            public_id=event_public_id,
             project_id=project_id,
             idempotency_key=idempotency_key,
             event_type=event_type,
             payload=payload,
             payload_hash=fingerprint,
+            canonical_envelope=canonical_envelope,
             created_at=now,
         )
         self.db.add(event)
@@ -417,6 +427,10 @@ class WebhookService:
                     public_id=str(uuid4()),
                     event_id=event.id,
                     endpoint_id=endpoint.id,
+                    endpoint_public_id_snapshot=endpoint.public_id,
+                    endpoint_url_snapshot=endpoint.url,
+                    endpoint_active_snapshot=endpoint.is_active,
+                    signing_secret_version_snapshot=endpoint.secret_version,
                     status="pending",
                     attempt_count=0,
                     next_attempt_at=now,
@@ -495,6 +509,14 @@ class WebhookService:
             event_id=original.event_id,
             endpoint_id=original.endpoint_id,
             replay_of_delivery_id=original.id,
+            endpoint_public_id_snapshot=(
+                original.endpoint_public_id_snapshot
+            ),
+            endpoint_url_snapshot=original.endpoint_url_snapshot,
+            endpoint_active_snapshot=original.endpoint_active_snapshot,
+            signing_secret_version_snapshot=(
+                original.signing_secret_version_snapshot
+            ),
             status="pending",
             attempt_count=0,
             next_attempt_at=now,

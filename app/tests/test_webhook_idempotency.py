@@ -1,5 +1,9 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import ApiKey
 
 
 async def create_project_key(
@@ -33,6 +37,7 @@ async def create_project_key(
 async def test_idempotency_reuses_event_and_rejects_changed_content(
     client: AsyncClient,
     auth,
+    db_session: AsyncSession,
 ):
     _, bearer_headers = auth
     api_key = await create_project_key(client, bearer_headers)
@@ -54,3 +59,9 @@ async def test_idempotency_reuses_event_and_rejects_changed_content(
     assert repeated.json()["public_id"] == first.json()["public_id"]
     assert changed.status_code == 409
     assert changed.json()["error"]["code"] == "CONFLICT"
+
+    key_prefix = api_key.split("_", 2)[1]
+    stored_key = await db_session.scalar(
+        select(ApiKey).where(ApiKey.key_prefix == key_prefix)
+    )
+    assert stored_key is not None and stored_key.last_used_at is None

@@ -107,36 +107,50 @@ manual dispatch. Documentation-only changes skip paid runner work. `make check`
 passes 63 fast tests,
 Ruff, mypy, and compilation; the complete live PostgreSQL suite passes 65
 tests. A disposable PostgreSQL database successfully upgraded through
-`0002_drop_duplicate_uniques`, and `alembic check` found no drift. GitHub-hosted
-CI and container execution remain to be observed after these changes are next
-committed and pushed.
+`0002_drop_duplicate_uniques`, and `alembic check` found no drift. After commit
+`1ce724c`, GitHub-hosted CI run `32147948666` and container run `32147948678`
+both completed successfully.
 
-**Completion gate:** a new contributor can run checks locally, submit a security
-report privately, and understand the project license and compatibility policy.
-Remote CI status must be green before Phase 1 is declared complete and Phase 2
-begins.
+**Completion gate: passed on 2026-08-18.** A new contributor can run checks
+locally, submit a security report privately, and understand the project license
+and compatibility policy. The required remote CI and container checks are green.
 
 ## Phase 2 — Queue correctness and worker safety
 
 **Purpose:** make horizontal worker scaling safe before using it for spikes.
 
-- [ ] Claim no more jobs than currently available execution slots.
-- [ ] Add lease heartbeat/renewal for long-running requests.
-- [ ] Set lease duration above queue wait, HTTP deadline, heartbeat delay, and
+- [x] Claim no more jobs than currently available execution slots.
+- [x] Add lease heartbeat/renewal for long-running requests.
+- [x] Set lease duration above queue wait, HTTP deadline, heartbeat delay, and
       finalization margin.
-- [ ] Snapshot endpoint URL, endpoint state, and signing-secret version into the
+- [x] Snapshot endpoint URL, endpoint state, and signing-secret version into the
       delivery at event acceptance time.
-- [ ] Preserve immutable event payload bytes or an immutable canonical envelope.
-- [ ] Make claim, finalization, and stale-worker rejection atomic.
-- [ ] Keep attempt records append-only and uniquely numbered per delivery.
-- [ ] Add graceful shutdown: stop claiming, finish bounded in-flight work, then
+- [x] Preserve immutable event payload bytes or an immutable canonical envelope.
+- [x] Make claim, finalization, and stale-worker rejection atomic.
+- [x] Keep attempt records append-only and uniquely numbered per delivery.
+- [x] Add graceful shutdown: stop claiming, finish bounded in-flight work, then
       release database and HTTP resources.
-- [ ] Bound API and worker connection pools independently.
-- [ ] Remove synchronous API-key `last_used_at` writes from the ingest hot path;
+- [x] Bound API and worker connection pools independently.
+- [x] Remove synchronous API-key `last_used_at` writes from the ingest hot path;
       aggregate or update them periodically.
 
-**Completion gate:** concurrent workers cannot own the same valid lease; stale
-workers cannot overwrite newer results; shutdown leaves work reclaimable.
+**Phase 2 evidence (2026-08-18):** `docs/phase2-worker-safety.md` records the
+ownership, immutable-input, shutdown, pool, and usage-write contracts. Workers
+claim only free slots, renew live token-guarded leases, use an overall request
+deadline, reject expired finalization using PostgreSQL time, and release
+unfinished work after a bounded drain. Migration `0003_phase2_delivery_safety`
+stores exact canonical event bytes plus acceptance-time endpoint snapshots and
+backfills existing rows. Replay copies the original snapshot. API and worker
+pools have independent budgets, and API-key usage writes are coalesced off the
+ingest transaction. All 76 tests passed, including five live PostgreSQL races;
+a populated `0002` database upgraded and backfilled successfully, `alembic
+check` found no drift, and Ruff, configured mypy, compilation, and `make check`
+passed.
+
+**Completion gate: passed on 2026-08-18.** Concurrent workers cannot own the
+same valid lease; expired or replaced workers cannot finalize; bounded shutdown
+leaves unfinished work immediately reclaimable. Remote CI must be green after
+these changes are committed and pushed before Phase 3 begins.
 
 ## Phase 3 — Egress and SSRF security boundary
 

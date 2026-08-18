@@ -53,6 +53,7 @@ from app.models import (  # noqa: E402
 )
 from app.services.delivery_service import DeliveryService  # noqa: E402
 from app.webhook_security import (  # noqa: E402
+    canonical_json,
     digest_api_key,
     generate_api_key,
 )
@@ -416,14 +417,25 @@ async def create_bulk_event(
 ) -> int:
     async with factory() as session:
         async with session.begin():
+            created_at = datetime.now(timezone.utc)
+            public_id = str(uuid4())
+            payload = {"run_id": run_id, "bulk": True}
             event = Event(
-                public_id=str(uuid4()),
+                public_id=public_id,
                 project_id=project_id,
                 idempotency_key=f"phase0-bulk-{run_id}",
                 event_type="phase0.bulk",
-                payload={"run_id": run_id, "bulk": True},
+                payload=payload,
                 payload_hash=hashlib.sha256(run_id.encode()).hexdigest(),
-                created_at=datetime.now(timezone.utc),
+                canonical_envelope=canonical_json(
+                    {
+                        "id": public_id,
+                        "type": "phase0.bulk",
+                        "created_at": created_at.isoformat(),
+                        "data": payload,
+                    }
+                ),
+                created_at=created_at,
             )
             session.add(event)
             await session.flush()
@@ -450,12 +462,18 @@ async def generate_bulk_deliveries(
     created_at = datetime.now(timezone.utc)
     statement = """
         INSERT INTO deliveries (
-            public_id, event_id, endpoint_id, status, attempt_count,
-            next_attempt_at, created_at, updated_at
+            public_id, event_id, endpoint_id,
+            endpoint_public_id_snapshot, endpoint_url_snapshot,
+            endpoint_active_snapshot, signing_secret_version_snapshot,
+            status, attempt_count, next_attempt_at, created_at, updated_at
         )
         SELECT
-            md5($1 || series::text), $2, $3, 'pending', 0, $4, $4, $4
+            md5($1 || series::text), $2, endpoint.id,
+            endpoint.public_id, endpoint.url, endpoint.is_active,
+            endpoint.secret_version, 'pending', 0, $4, $4, $4
         FROM generate_series($5::integer, $6::integer) AS series
+        CROSS JOIN webhook_endpoints AS endpoint
+        WHERE endpoint.id = $3
     """
     while inserted < count:
         chunk = min(batch_size, count - inserted)

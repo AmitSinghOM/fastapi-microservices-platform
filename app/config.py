@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./app.db"
     auto_create_schema: bool = True
     database_health_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    api_db_pool_size: int = Field(default=5, ge=1, le=100)
+    api_db_max_overflow: int = Field(default=5, ge=0, le=100)
+    api_db_pool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    worker_db_pool_size: int = Field(default=5, ge=1, le=100)
+    worker_db_max_overflow: int = Field(default=5, ge=0, le=100)
+    worker_db_pool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
 
     secret_key: str = ""
     api_key_pepper: str = ""
@@ -45,6 +51,12 @@ class Settings(BaseSettings):
     worker_batch_size: int = Field(default=50, ge=1, le=500)
     worker_concurrency: int = Field(default=10, ge=1, le=100)
     worker_lease_seconds: int = Field(default=60, ge=5, le=3600)
+    worker_heartbeat_seconds: float = Field(default=10.0, gt=0, le=600)
+    worker_attempt_timeout_seconds: float = Field(default=30.0, gt=0, le=600)
+    worker_finalization_margin_seconds: float = Field(
+        default=5.0, gt=0, le=60
+    )
+    worker_shutdown_grace_seconds: float = Field(default=45.0, gt=0, le=600)
     http_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     http_read_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     http_write_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
@@ -63,6 +75,10 @@ class Settings(BaseSettings):
     webhook_max_attempts: int = Field(default=8, ge=1, le=50)
     webhook_backoff_base_seconds: float = Field(default=1.0, gt=0, le=3600)
     webhook_backoff_cap_seconds: float = Field(default=3600.0, gt=0, le=86_400)
+    api_key_usage_flush_seconds: float = Field(default=30.0, gt=0, le=600)
+    api_key_usage_max_entries: int = Field(
+        default=10_000, ge=100, le=1_000_000
+    )
 
     @model_validator(mode="after")
     def validate_deployment_settings(self) -> "Settings":
@@ -97,6 +113,24 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "WEBHOOK_BACKOFF_CAP_SECONDS must be at least the base"
+            )
+        required_lease = (
+            self.worker_attempt_timeout_seconds
+            + self.worker_heartbeat_seconds
+            + self.worker_finalization_margin_seconds
+        )
+        if self.worker_lease_seconds <= required_lease:
+            raise ValueError(
+                "WORKER_LEASE_SECONDS must exceed the attempt deadline, "
+                "heartbeat delay, and finalization margin"
+            )
+        if self.worker_shutdown_grace_seconds < (
+            self.worker_attempt_timeout_seconds
+            + self.worker_finalization_margin_seconds
+        ):
+            raise ValueError(
+                "WORKER_SHUTDOWN_GRACE_SECONDS must cover the attempt "
+                "deadline and finalization margin"
             )
         if deployed and self.auto_create_schema:
             raise ValueError(

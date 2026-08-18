@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -199,6 +200,7 @@ class Event(Base):
     event_type = Column(String(150), nullable=False)
     payload = Column(JSON, nullable=False)
     payload_hash = Column(String(64), nullable=False)
+    canonical_envelope = Column(LargeBinary, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
 
     project = relationship("Project", overlaps="events")
@@ -215,6 +217,10 @@ class Delivery(Base):
         ),
         CheckConstraint(
             "attempt_count >= 0", name="ck_deliveries_attempt_count"
+        ),
+        CheckConstraint(
+            "signing_secret_version_snapshot >= 1",
+            name="ck_deliveries_snapshot_secret_version",
         ),
         Index(
             "ix_deliveries_due",
@@ -241,6 +247,10 @@ class Delivery(Base):
         ForeignKey("deliveries.id", ondelete="SET NULL"),
         nullable=True,
     )
+    endpoint_public_id_snapshot = Column(String(36), nullable=False)
+    endpoint_url_snapshot = Column(String(2_048), nullable=False)
+    endpoint_active_snapshot = Column(Boolean, nullable=False)
+    signing_secret_version_snapshot = Column(Integer, nullable=False)
     status = Column(String(32), nullable=False)
     attempt_count = Column(Integer, default=0, nullable=False)
     next_attempt_at = Column(DateTime(timezone=True), nullable=False)

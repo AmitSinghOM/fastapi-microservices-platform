@@ -6,6 +6,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.api_key_usage import api_key_usage_tracker
 from app.config import get_settings
 from app.db import close_database, database_is_ready, init_db
 from app.exception_handlers import register_exception_handlers
@@ -25,9 +26,11 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.auto_create_schema:
         await init_db()
+    await api_key_usage_tracker.start()
     try:
         yield
     finally:
+        await api_key_usage_tracker.stop()
         await close_database()
 
 

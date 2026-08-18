@@ -49,9 +49,20 @@ the original so historical attempts remain append-only.
 ## Lease and crash behavior
 
 A claim transaction changes a due delivery to `processing`, increments its
-attempt number, and assigns a unique lease token and expiry. Outbound HTTP occurs
-after this transaction commits. Finalization succeeds only when the row is still
-`processing` and the lease token matches.
+attempt number, and assigns a unique lease token and expiry using database
+server time. Workers claim only currently free execution slots, so leased work
+does not wait behind a local semaphore. Outbound HTTP occurs after the claim
+transaction commits. A heartbeat renews ownership during the bounded overall
+attempt deadline. Finalization succeeds only when the row is still `processing`,
+the lease token matches, and the lease has not expired. Renewal and finalization
+use database time so host clock skew cannot extend ownership.
+
+Each delivery stores the endpoint URL, active state, public ID, and signing-secret
+version observed when the event was accepted. The event stores the exact
+canonical envelope bytes. Endpoint edits, deactivation, secret rotation, or JSON
+re-serialization therefore cannot change accepted work. Explicit replay copies
+the original delivery snapshot; operators must create a new event to target a
+new endpoint configuration.
 
 | Crash point | Durable state | Recovery behavior |
 | --- | --- | --- |
@@ -61,10 +72,13 @@ after this transaction commits. Finalization succeeds only when the row is still
 | After receiver 2xx, before finalize | `processing` | Retry may produce a duplicate invocation |
 | After finalize commit | Terminal/retry state | Normal processing continues |
 
-A stale worker cannot finalize after another worker reclaims the row because its
-lease token no longer matches. Lease duration must exceed local queue wait, the
-HTTP deadline, and finalization margin. Phase 2 adds heartbeat renewal for calls
-that may approach the lease limit.
+A stale worker cannot finalize after its lease expires or another worker
+reclaims the row. Lease duration is validated to exceed the total HTTP attempt
+deadline, one heartbeat scheduling delay, and the finalization margin. On
+shutdown, the worker stops claiming, drains in-flight attempts for a bounded
+grace period, and releases canceled claims for immediate recovery. Cancellation
+after receiver acceptance can still produce a duplicate, as required by the
+at-least-once contract.
 
 ## Receiver contract
 

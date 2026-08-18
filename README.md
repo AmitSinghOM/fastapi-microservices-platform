@@ -104,15 +104,28 @@ and compare with a constant-time function before parsing JSON.
 Only network/timeouts and HTTP `408`, `425`, `429`, and `5xx` retry. Other HTTP
 statuses are terminal. Delay uses capped exponential backoff with full jitter;
 max attempts transitions to `dead`. Claims use row locking with skip-locked,
-short lease transactions, and token-guarded finalization. HTTP is never inside a
-database transaction. Poll batch/concurrency limits bound retry load; scale
-workers horizontally against PostgreSQL. SQLite is for local/test use and does
-not provide PostgreSQL's concurrent claim semantics.
+database-time leases, token-guarded heartbeats, and expiry-guarded finalization.
+Workers never claim more rows than free execution slots. Every attempt has an
+overall deadline in addition to HTTP phase timeouts; HTTP is never inside a
+database transaction. On SIGINT/SIGTERM the worker stops claiming, drains work
+within a configured grace period, releases unfinished claims, then closes HTTP
+and its independently bounded database pool.
+
+The event’s exact canonical envelope bytes and each delivery’s endpoint URL,
+active state, public ID, and signing-secret version are captured atomically at
+acceptance. Later endpoint edits or JSON re-serialization cannot alter accepted
+work or signatures. Replay deliberately copies the original snapshot. Delivery
+attempts remain insert-only in application behavior and uniquely numbered per
+delivery; crash windows may leave intentional numbering gaps.
 
 The client has explicit connect/read/write/pool timeouts, ignores proxy
 environment variables, refuses redirects, captures only a bounded response
 prefix, and does not log payloads, credentials, endpoint secrets, or responses.
-Stop with SIGINT/SIGTERM for graceful completion of the current batch.
+API-key `last_used_at` writes are coalesced in memory and flushed periodically,
+so ingestion no longer waits for a usage-only database commit and the timestamp
+is intentionally eventually consistent. API and worker database pools have
+separate bounded size, overflow, and wait settings. SQLite is for local/test use
+and does not provide PostgreSQL's concurrent claim semantics.
 
 ## SSRF and production egress boundary
 
@@ -136,11 +149,14 @@ alembic upgrade head
 alembic downgrade base  # destructive; development rollback only
 ```
 
-`migrations/env.py` uses the configured async database URL. Set
+`migrations/env.py` uses the configured async database URL. Revision `0003`
+backfills canonical event envelopes and endpoint snapshots; historical endpoint
+state can only reflect what is visible during that upgrade. Set
 `AUTO_CREATE_SCHEMA=false` in staging/production; those environments reject
 local schema auto-creation and require all three secrets at 32+ characters.
-Configuration includes payload/response/idempotency limits, worker lease/poll/
-batch/concurrency, four HTTP timeout phases, and retry/backoff bounds.
+Configuration includes independent API/worker database pools, API-key usage
+flush bounds, payload/response/idempotency limits, worker lease/heartbeat/
+attempt/drain bounds, four HTTP timeout phases, and retry/backoff bounds.
 
 Health endpoints: `/livez`, database `/readyz`, and deprecated `/health`.
 Existing `/users`, `/auth`, and `/items` routes and JWT behavior are retained,

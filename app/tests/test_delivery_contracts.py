@@ -17,6 +17,7 @@ from app.models import (
     WebhookEndpoint,
 )
 from app.services.delivery_service import ClaimedDelivery, DeliveryService
+from app.webhook_security import canonical_json
 
 
 def now() -> datetime:
@@ -32,6 +33,10 @@ def worker_settings() -> Settings:
         webhook_signing_key="w" * 32,
         allow_http_webhooks=False,
         worker_lease_seconds=5,
+        worker_heartbeat_seconds=1,
+        worker_attempt_timeout_seconds=1,
+        worker_finalization_margin_seconds=1,
+        worker_shutdown_grace_seconds=2,
     )
 
 
@@ -74,14 +79,27 @@ async def seed_delivery(
                 event_type="phase0.test",
                 payload={"value": 1},
                 payload_hash="a" * 64,
+                canonical_envelope=b"pending",
                 created_at=created_at,
             )
             session.add_all((endpoint, event))
             await session.flush()
+            event.canonical_envelope = canonical_json(
+                {
+                    "id": event.public_id,
+                    "type": event.event_type,
+                    "created_at": event.created_at.isoformat(),
+                    "data": event.payload,
+                }
+            )
             delivery = Delivery(
                 public_id=str(uuid4()),
                 event_id=event.id,
                 endpoint_id=endpoint.id,
+                endpoint_public_id_snapshot=endpoint.public_id,
+                endpoint_url_snapshot=endpoint.url,
+                endpoint_active_snapshot=endpoint.is_active,
+                signing_secret_version_snapshot=endpoint.secret_version,
                 status="pending",
                 attempt_count=0,
                 next_attempt_at=created_at,

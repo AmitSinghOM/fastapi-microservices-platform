@@ -7,10 +7,22 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Delivery, Event, Organization, Project, WebhookEndpoint
+from app.models import (
+    Delivery,
+    DeliveryAttempt,
+    Event,
+    Organization,
+    Project,
+    WebhookEndpoint,
+)
 from app.services.delivery_service import DeliveryService
 from app.services.webhook_service import WebhookService
-from app.tests.test_delivery_contracts import seed_delivery, worker_settings
+from app.tests.test_delivery_contracts import (
+    expire_lease,
+    finalize_success,
+    seed_delivery,
+    worker_settings,
+)
 
 pytestmark = pytest.mark.postgres
 
@@ -112,3 +124,61 @@ async def test_competing_workers_claim_delivery_once(
     assert delivery.status == "processing"
     assert delivery.attempt_count == 1
     assert delivery.lease_token == claims[0].lease_token
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_prevents_competing_reclaim(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+):
+    await seed_delivery(postgres_session_factory)
+    async with httpx.AsyncClient() as client:
+        owner = DeliveryService(
+            postgres_session_factory, client, worker_settings()
+        )
+        competitor = DeliveryService(
+            postgres_session_factory, client, worker_settings()
+        )
+        claim = (await owner.claim_due(1))[0]
+        assert await owner.renew_lease(claim) is True
+        assert await competitor.claim_due(1) == []
+
+
+@pytest.mark.asyncio
+async def test_concurrent_finalization_inserts_one_attempt(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+):
+    delivery_id = await seed_delivery(postgres_session_factory)
+    async with httpx.AsyncClient() as client:
+        service = DeliveryService(
+            postgres_session_factory, client, worker_settings()
+        )
+        claim = (await service.claim_due(1))[0]
+        results = await asyncio.gather(
+            finalize_success(service, claim),
+            finalize_success(service, claim),
+        )
+
+    assert sorted(results) == [False, True]
+    async with postgres_session_factory() as session:
+        attempts = list(
+            await session.scalars(
+                select(DeliveryAttempt).where(
+                    DeliveryAttempt.delivery_id == delivery_id
+                )
+            )
+        )
+    assert [attempt.attempt_number for attempt in attempts] == [1]
+
+
+@pytest.mark.asyncio
+async def test_expired_owner_cannot_finalize_before_reclaim(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+):
+    delivery_id = await seed_delivery(postgres_session_factory)
+    async with httpx.AsyncClient() as client:
+        service = DeliveryService(
+            postgres_session_factory, client, worker_settings()
+        )
+        claim = (await service.claim_due(1))[0]
+        await expire_lease(postgres_session_factory, delivery_id)
+        assert await finalize_success(service, claim) is False
