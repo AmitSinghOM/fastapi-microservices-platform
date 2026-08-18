@@ -117,5 +117,5 @@ async def validate_webhook_url(url: str, allow_http: bool = False) -> str:
     if not addresses:
         raise UnsafeWebhookUrl("Webhook host did not resolve")
     for address in addresses:
-        _require_global(address)
+        _require_global(str(address))
     return url

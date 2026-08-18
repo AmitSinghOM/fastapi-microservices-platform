@@ -1,5 +1,7 @@
 # FastAPI Webhook Delivery Platform
 
+[![CI](https://github.com/AmitSinghOM/fastapi-microservices-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/AmitSinghOM/fastapi-microservices-platform/actions/workflows/ci.yml)
+
 An async webhook control plane and separately runnable delivery worker. Existing
 JWT users and owned-item APIs remain available; webhook ingestion uses project
 API keys and organization membership is the management authorization boundary.
@@ -145,3 +147,26 @@ Existing `/users`, `/auth`, and `/items` routes and JWT behavior are retained,
 including owned-item delete-orphan cascading. API docs are at `/docs` and
 `/redoc` when enabled. CORS remains opt-in and, when configured, accepts the JWT,
 API-key, idempotency, content, and request-ID headers.
+
+## Development and project policy
+
+Install pinned development checks and run the local gate:
+
+```bash
+python -m pip install -r requirements-dev.txt
+make check
+```
+
+Set `TEST_POSTGRES_URL=postgresql+asyncpg:///postgres` to include the isolated
+PostgreSQL concurrency suite. See [CONTRIBUTING.md](CONTRIBUTING.md) for review
+requirements, [SECURITY.md](SECURITY.md) for private vulnerability reporting,
+[the threat model](docs/threat-model.md) for security boundaries, and
+[the release policy](docs/release-policy.md) for versioning and upgrades.
+
+The inherited `/items` API is a tutorial compatibility surface rather than part
+of the webhook product. Set `EXAMPLE_ITEMS_ENABLED=false` to omit its routes.
+It remains enabled by default through 3.x, defaults off in 4.0, and will not be
+removed before 5.0.
+
+This project is available under the [Apache License 2.0](LICENSE). Community
+participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

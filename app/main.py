@@ -53,7 +53,10 @@ def create_app() -> FastAPI:
             {"name": "auth", "description": "Authentication and identity"},
             {"name": "users", "description": "Account lifecycle"},
             {"name": "items", "description": "Owned item CRUD operations"},
-            {"name": "webhooks", "description": "Webhook control and ingestion"},
+            {
+                "name": "webhooks",
+                "description": "Webhook control and ingestion",
+            },
             {"name": "health", "description": "Orchestrator health probes"},
         ],
     )
@@ -84,7 +87,8 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(users_router)
-    app.include_router(items_router)
+    if settings.example_items_enabled:
+        app.include_router(items_router)
     app.include_router(webhooks_router)
 
     @app.get("/", include_in_schema=False)

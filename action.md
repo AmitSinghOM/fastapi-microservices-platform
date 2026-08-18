@@ -84,21 +84,37 @@ the permitted at-least-once duplicate behavior.
 **Purpose:** make expectations, security reporting, and contribution ownership
 clear before inviting production users.
 
-- [ ] Select and add an explicit license, preferably Apache-2.0 or MIT after
-      owner review.
-- [ ] Add `SECURITY.md` with supported versions and private reporting process.
-- [ ] Add `CONTRIBUTING.md`, code of conduct, development setup, and review
+- [x] Select and add an explicit Apache-2.0 license after owner review.
+- [x] Add `SECURITY.md` with supported versions and private reporting process.
+- [x] Add `CONTRIBUTING.md`, code of conduct, development setup, and review
       requirements.
-- [ ] Add a threat model covering tenants, API keys, endpoint secrets, event
+- [x] Add a threat model covering tenants, API keys, endpoint secrets, event
       payloads, SSRF, replay abuse, and worker compromise.
-- [ ] Add CI for tests, linting, type checks, migration checks, secret scanning,
+- [x] Add CI for tests, linting, type checks, migration checks, secret scanning,
       dependency review, and container build.
-- [ ] Define release versioning, upgrade support, and vulnerability response.
-- [ ] Move tutorial-only item APIs behind an example flag or document their
-      planned removal.
+- [x] Define release versioning, upgrade support, and vulnerability response.
+- [x] Move tutorial-only item APIs behind an example flag and document their
+      planned default-disable and removal schedule.
+
+**Phase 1 evidence (2026-08-18):** The repository now includes Apache-2.0
+licensing, private security reporting, contribution and conduct policies, a
+security-boundary threat model, SemVer/upgrade/deprecation policy, pinned Ruff
+and mypy development checks, monthly grouped Dependabot updates, a
+pull-request template, one consolidated 10-minute CI job for quality, live
+PostgreSQL tests, migration drift, secret scanning, and dependency review, plus
+a separate container build triggered only by container/dependency changes or
+manual dispatch. Documentation-only changes skip paid runner work. `make check`
+passes 63 fast tests,
+Ruff, mypy, and compilation; the complete live PostgreSQL suite passes 65
+tests. A disposable PostgreSQL database successfully upgraded through
+`0002_drop_duplicate_uniques`, and `alembic check` found no drift. GitHub-hosted
+CI and container execution remain to be observed after these changes are next
+committed and pushed.
 
 **Completion gate:** a new contributor can run checks locally, submit a security
 report privately, and understand the project license and compatibility policy.
+Remote CI status must be green before Phase 1 is declared complete and Phase 2
+begins.
 
 ## Phase 2 — Queue correctness and worker safety
 

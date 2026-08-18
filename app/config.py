@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     ] = "development"
     debug: bool = False
     docs_enabled: bool = True
+    example_items_enabled: bool = True
     database_url: str = "sqlite+aiosqlite:///./app.db"
     auto_create_schema: bool = True
     database_health_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
@@ -48,8 +49,16 @@ class Settings(BaseSettings):
     http_read_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     http_write_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     http_pool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
-    webhook_payload_max_bytes: int = Field(default=262_144, ge=1, le=10_485_760)
-    webhook_response_max_bytes: int = Field(default=16_384, ge=0, le=1_048_576)
+    webhook_payload_max_bytes: int = Field(
+        default=262_144,
+        ge=1,
+        le=10_485_760,
+    )
+    webhook_response_max_bytes: int = Field(
+        default=16_384,
+        ge=0,
+        le=1_048_576,
+    )
     idempotency_key_max_length: int = Field(default=255, ge=8, le=1024)
     webhook_max_attempts: int = Field(default=8, ge=1, le=50)
     webhook_backoff_base_seconds: float = Field(default=1.0, gt=0, le=3600)
@@ -82,13 +91,17 @@ class Settings(BaseSettings):
             raise ValueError(
                 "ALLOW_HTTP_WEBHOOKS may be true only in development"
             )
-        if self.webhook_backoff_cap_seconds < self.webhook_backoff_base_seconds:
+        if (
+            self.webhook_backoff_cap_seconds
+            < self.webhook_backoff_base_seconds
+        ):
             raise ValueError(
                 "WEBHOOK_BACKOFF_CAP_SECONDS must be at least the base"
             )
         if deployed and self.auto_create_schema:
             raise ValueError(
-                "AUTO_CREATE_SCHEMA must be false when deployed; run migrations"
+                "AUTO_CREATE_SCHEMA must be false when deployed; "
+                "run migrations"
             )
         if self.environment == "production" and self.debug:
             raise ValueError("DEBUG must be false in production")
