@@ -10,7 +10,12 @@ from app.config import get_settings
 from app.db import close_database, database_is_ready, init_db
 from app.exception_handlers import register_exception_handlers
 from app.middleware import RateLimitMiddleware, RequestContextMiddleware
-from app.routers import auth_router, items_router, users_router
+from app.routers import (
+    auth_router,
+    items_router,
+    users_router,
+    webhooks_router,
+)
 
 
 @asynccontextmanager
@@ -31,11 +36,12 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title=settings.app_name,
-        summary="Async service platform with authentication and owned resources",
+        summary="Async webhook platform with authenticated management",
         description=(
-            "A production-oriented FastAPI reference platform with async SQLAlchemy, "
-            "OAuth2 bearer authentication, validation, rate limiting, health probes, "
-            "request tracing, and consistent errors."
+            "A production-oriented FastAPI webhook platform with async "
+            "SQLAlchemy, OAuth2 bearer management authentication, project "
+            "API keys, durable delivery, health probes, request tracing, "
+            "and consistent errors."
         ),
         version=settings.app_version,
         debug=settings.debug,
@@ -47,6 +53,7 @@ def create_app() -> FastAPI:
             {"name": "auth", "description": "Authentication and identity"},
             {"name": "users", "description": "Account lifecycle"},
             {"name": "items", "description": "Owned item CRUD operations"},
+            {"name": "webhooks", "description": "Webhook control and ingestion"},
             {"name": "health", "description": "Orchestrator health probes"},
         ],
     )
@@ -59,7 +66,13 @@ def create_app() -> FastAPI:
             allow_origins=settings.cors_origins,
             allow_credentials=True,
             allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "X-API-Key",
+                "X-Request-ID",
+            ],
             expose_headers=["X-Request-ID", "X-Process-Time"],
         )
     app.add_middleware(
@@ -72,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(users_router)
     app.include_router(items_router)
+    app.include_router(webhooks_router)
 
     @app.get("/", include_in_schema=False)
     async def service_index() -> dict[str, str]:

@@ -1,7 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.services.user_service import UserService
 from app.services.item_service import ItemService
+from app.services.webhook_service import WebhookService
 
 
 class ServiceFactory:
@@ -27,6 +29,10 @@ class ServiceFactory:
     def get_item_service(self) -> ItemService:
         """Create ItemService instance."""
         return ItemService(db=self.db)
+
+    def get_webhook_service(self) -> WebhookService:
+        """Create a tenant-scoped webhook service."""
+        return WebhookService(db=self.db, settings=get_settings())
 
 
 # Convenience functions for dependency injection

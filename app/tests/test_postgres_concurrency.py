@@ -1,0 +1,114 @@
+import asyncio
+from datetime import datetime, timezone
+from uuid import uuid4
+
+import httpx
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.models import Delivery, Event, Organization, Project, WebhookEndpoint
+from app.services.delivery_service import DeliveryService
+from app.services.webhook_service import WebhookService
+from app.tests.test_delivery_contracts import seed_delivery, worker_settings
+
+pytestmark = pytest.mark.postgres
+
+
+async def seed_project(
+    factory: async_sessionmaker[AsyncSession],
+) -> int:
+    created_at = datetime.now(timezone.utc)
+    async with factory() as session:
+        async with session.begin():
+            organization = Organization(
+                public_id=str(uuid4()),
+                name="Concurrent ingestion",
+                created_at=created_at,
+            )
+            session.add(organization)
+            await session.flush()
+            project = Project(
+                public_id=str(uuid4()),
+                organization_id=organization.id,
+                name="PostgreSQL contracts",
+                is_active=True,
+                created_at=created_at,
+            )
+            session.add(project)
+            await session.flush()
+            endpoint = WebhookEndpoint(
+                public_id=str(uuid4()),
+                project_id=project.id,
+                url="https://receiver.example/webhooks",
+                is_active=True,
+                secret_version=1,
+                created_at=created_at,
+                updated_at=created_at,
+            )
+            session.add(endpoint)
+            return project.id
+
+
+@pytest.mark.asyncio
+async def test_concurrent_idempotency_creates_one_event_and_fanout(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+):
+    project_id = await seed_project(postgres_session_factory)
+
+    async def ingest() -> str:
+        async with postgres_session_factory() as session:
+            project = await session.get(Project, project_id)
+            assert project is not None
+            event = await WebhookService(
+                session,
+                worker_settings(),
+            ).ingest_event(
+                project,
+                "concurrent-order-0001",
+                "order.created",
+                {"order_id": "0001"},
+            )
+            return event.public_id
+
+    event_ids = await asyncio.gather(ingest(), ingest())
+
+    assert event_ids[0] == event_ids[1]
+    async with postgres_session_factory() as session:
+        event_count = await session.scalar(select(func.count(Event.id)))
+        delivery_count = await session.scalar(select(func.count(Delivery.id)))
+    assert event_count == 1
+    assert delivery_count == 1
+
+
+@pytest.mark.asyncio
+async def test_competing_workers_claim_delivery_once(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+):
+    await seed_delivery(postgres_session_factory)
+    async with httpx.AsyncClient() as client:
+        first_worker = DeliveryService(
+            postgres_session_factory,
+            client,
+            worker_settings(),
+        )
+        second_worker = DeliveryService(
+            postgres_session_factory,
+            client,
+            worker_settings(),
+        )
+        first_claims, second_claims = await asyncio.gather(
+            first_worker.claim_due(1),
+            second_worker.claim_due(1),
+        )
+
+    claims = first_claims + second_claims
+    assert len(claims) == 1
+    assert len({claim.public_id for claim in claims}) == 1
+
+    async with postgres_session_factory() as session:
+        delivery = await session.scalar(select(Delivery))
+    assert delivery is not None
+    assert delivery.status == "processing"
+    assert delivery.attempt_count == 1
+    assert delivery.lease_token == claims[0].lease_token

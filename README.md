@@ -1,49 +1,27 @@
-# FastAPI Service Platform
+# FastAPI Webhook Delivery Platform
 
-An async, production-oriented FastAPI reference service with a clear router →
-service → persistence architecture. It is one deployable service today, not a
-distributed microservice system; the boundaries are designed so domains can be
-split later when operational needs justify it.
-
-## Included capabilities
-
-- Async FastAPI endpoints and SQLAlchemy 2 sessions
-- OAuth2 password login with short-lived signed JWT bearer tokens
-- bcrypt password hashing and transparent migration of legacy SHA-256 hashes
-- Per-user authorization for account and item operations
-- Strict Pydantic v2 request/response contracts and standardized error bodies
-- Fixed-precision item prices, relational checks, and cascading ownership
-- Stable offset pagination (`skip >= 0`, `1 <= limit <= 100`)
-- Request IDs, process timing, gzip, trusted-host validation, optional CORS,
-  and baseline browser-security headers
-- Bounded login/registration rate limiting for a single process
-- Liveness (`/livez`), database readiness (`/readyz`), and compatibility
-  health (`/health`) probes
-- Swagger UI, ReDoc, and OpenAPI metadata, optionally disabled in deployment
-- Graceful database pool shutdown and persistent Docker Compose data
-- Consistent 401 `WWW-Authenticate: Bearer` challenges
+An async webhook control plane and separately runnable delivery worker. Existing
+JWT users and owned-item APIs remain available; webhook ingestion uses project
+API keys and organization membership is the management authorization boundary.
 
 ## Architecture
 
 ```text
-Client
-  └─ FastAPI application
-      ├─ middleware      request context, hosts, CORS, gzip, rate limiting
-      ├─ routers         HTTP contracts and dependency injection
-      ├─ services        reusable business and transaction logic
-      ├─ schemas         Pydantic validation and serialization
-      └─ persistence     async SQLAlchemy models and sessions
+JWT client -> FastAPI control plane -> PostgreSQL/SQLite
+producer --X-API-Key--> POST /v1/events -> event + delivery fan-out transaction
+worker -> short lease claim -> HTTPS outside transaction -> guarded finalize
 ```
 
-Routers stay thin, services do not import FastAPI, and request-scoped sessions
-are supplied through dependencies. Non-idempotent database writes are not
-retried automatically: replaying an ambiguous commit can create duplicate
-state. Retry only transient failures at an idempotent boundary with backoff,
-jitter, and retry-storm protection.
+The database is the durable queue. Deliveries use
+`pending|processing|retry_scheduled|succeeded|dead`, lease tokens, and append-only
+attempt records. API keys are stored only as peppered HMAC-SHA256 digests.
+Endpoint secrets are derived from a dedicated signing key, endpoint public ID,
+and secret version. Plaintext credentials appear only in create/rotation
+responses.
 
 ## Quick start
 
-Requires Python 3.11 or newer.
+Python 3.11+:
 
 ```bash
 python3 -m venv .venv
@@ -51,112 +29,119 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 uvicorn app.main:app --reload
+# Separate terminal; never embed this in the API process:
+python -m app.worker
 ```
 
-Open:
-
-- API index: <http://localhost:8000/>
-- Swagger UI: <http://localhost:8000/docs>
-- ReDoc: <http://localhost:8000/redoc>
-- OpenAPI JSON: <http://localhost:8000/openapi.json>
-
-## Authentication example
+Docker Compose starts PostgreSQL 17.2, runs the one-shot migration, waits for a
+healthy API, then starts the worker:
 
 ```bash
-curl -X POST http://localhost:8000/users/ \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"user@example.com","name":"Example","password":"long-password"}'
-
-curl -X POST http://localhost:8000/auth/login \
-  -d 'username=user@example.com&password=long-password'
-
-curl http://localhost:8000/items/ \
-  -H 'Authorization: Bearer <access-token>'
-```
-
-Registration and login intentionally return indistinguishable authentication
-failures where applicable. Resource ownership always comes from the verified
-token, never from a caller-provided owner ID.
-
-## Configuration
-
-Copy `.env.example` and configure environment variables. Important settings:
-
-| Variable | Purpose |
-|---|---|
-| `ENVIRONMENT` | `development`, `test`, `staging`, or `production` |
-| `SECRET_KEY` | JWT signing key; required in staging/production, minimum 32 characters |
-| `DATABASE_URL` | SQLAlchemy async database URL |
-| `AUTO_CREATE_SCHEMA` | Local convenience; must be `false` when deployed |
-| `ALLOWED_HOSTS` | JSON array accepted by trusted-host middleware |
-| `CORS_ORIGINS` | JSON array of explicit browser origins; empty disables CORS |
-| `DOCS_ENABLED` | Enables Swagger, ReDoc, and OpenAPI endpoints |
-| `RATE_LIMIT_*` | Single-process unauthenticated endpoint limits |
-
-Staging/production settings fail closed when the secret is absent, debug is on
-in production, schema auto-creation is enabled, or allowed hosts are empty.
-Use versioned migrations before deployment; `create_all` is retained only for
-local development and tests.
-
-## Docker Compose
-
-```bash
-# Set a stable key so issued tokens survive container restarts.
-export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 docker compose up --build
 ```
 
-The Compose setup stores SQLite data in the named `api-data` volume instead of
-inside the replaceable container. SQLite is suitable for this local setup; use
-a managed production database and a compatible async driver for multi-instance
-deployments.
+Compose defaults are explicitly development-only, not production secrets.
+Provide stable `SECRET_KEY`, `API_KEY_PEPPER`, `WEBHOOK_SIGNING_KEY`, and database
+credentials in every shared environment.
 
-## Health and operations
-
-- `/livez`: process liveness; does not touch dependencies
-- `/readyz`: bounded database connectivity probe; returns 503 when unavailable
-- `/health`: deprecated compatibility liveness endpoint
-- `X-Request-ID`: accepted when safe, otherwise generated; echoed in responses
-- `X-Process-Time`: application processing time in seconds
-
-The built-in rate limiter is deliberately bounded but process-local. Multiple
-workers or replicas must use an atomic shared limiter or enforce the policy at
-a trusted ingress. Configure proxy trust at the ASGI server; arbitrary
-`X-Forwarded-For` values are not trusted by application code.
-
-## Testing
+## End-to-end API
 
 ```bash
-pytest app/tests -q
-python -m compileall -q app
+BASE=http://localhost:8000
+curl -sS -X POST "$BASE/users/" -H 'Content-Type: application/json' \
+  -d '{"email":"owner@example.com","name":"Owner","password":"long-password"}'
+TOKEN=$(curl -sS -X POST "$BASE/auth/login" \
+  -d 'username=owner@example.com&password=long-password' | jq -r .access_token)
+
+ORG=$(curl -sS -X POST "$BASE/v1/organizations" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Example"}' | jq -r .public_id)
+PROJECT=$(curl -sS -X POST "$BASE/v1/organizations/$ORG/projects" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"Production events"}' | jq -r .public_id)
+API_KEY=$(curl -sS -X POST "$BASE/v1/projects/$PROJECT/api-keys" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"producer"}' | jq -r .plaintext_key)
+
+# Use a public HTTPS receiver whose DNS resolves only to global addresses.
+curl -sS -X POST "$BASE/v1/projects/$PROJECT/endpoints" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"url":"https://receiver.example/webhooks","description":"primary"}'
+
+curl -sS -X POST "$BASE/v1/events" \
+  -H "X-API-Key: $API_KEY" -H 'Idempotency-Key: order-123-created' \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"order.created","payload":{"order_id":"123","total":42}}'
 ```
 
-The current suite covers authentication, token handling, account isolation,
-item ownership, CRUD operations, and rate limiting.
+Event ingestion returns `202`. Reusing a key with the same type and canonical
+payload returns the original event; changing either returns standardized `409
+CONFLICT`. Lists use bounded `offset` and `limit` (maximum 100). Management
+routes cover organizations/members/projects, key revocation, endpoint update,
+deactivation and secret rotation, event/delivery detail, attempts, and replay.
+Replay creates a fresh delivery linked to the original.
 
-## Project structure
+## Signature verification
 
-```text
-app/
-├── main.py               application factory, middleware, health endpoints
-├── config.py             environment-aware validated settings
-├── db.py                 async engine, sessions, readiness, lifecycle
-├── models.py             SQLAlchemy models and relational constraints
-├── auth.py               bearer-token dependencies
-├── security.py           password hashing and JWT operations
-├── exception_handlers.py consistent API errors
-├── middleware.py         request context and rate limiting
-├── routers/              auth, user, and item HTTP APIs
-├── schemas/              Pydantic request/response contracts
-├── services/             domain and transaction logic
-└── tests/                async API tests
+The exact request body is compact canonical UTF-8 JSON with sorted keys and no
+NaN/infinity. It is the envelope:
+
+```json
+{"created_at":"<ISO-8601>","data":<event-payload>,"id":"<event-id>","type":"<event-type>"}
 ```
 
-## Production boundaries
+For timestamp `T`, compute lowercase hex
+`HMAC-SHA256(endpoint_secret, ASCII(T) + b"." + exact_body_bytes)`. The header is
+exactly `Webhook-Signature: t=<T>,v1=<hex>`. Also sent are `Webhook-Id`,
+`Webhook-Timestamp`, `Webhook-Event`, and `Webhook-Attempt`. Parse the signature,
+reject stale timestamps according to receiver policy, compute over the raw body,
+and compare with a constant-time function before parsing JSON.
 
-No platform can meaningfully provide “all FastAPI features.” This repository
-now provides a strong service baseline. Before a real production launch, add
-versioned migrations (for example, Alembic), a production database, centralized
-metrics/tracing/log aggregation, shared rate limiting, secret-manager-backed
-key rotation, and refresh-token/revocation flows according to the product’s
-requirements.
+## Retries and worker safety
+
+Only network/timeouts and HTTP `408`, `425`, `429`, and `5xx` retry. Other HTTP
+statuses are terminal. Delay uses capped exponential backoff with full jitter;
+max attempts transitions to `dead`. Claims use row locking with skip-locked,
+short lease transactions, and token-guarded finalization. HTTP is never inside a
+database transaction. Poll batch/concurrency limits bound retry load; scale
+workers horizontally against PostgreSQL. SQLite is for local/test use and does
+not provide PostgreSQL's concurrent claim semantics.
+
+The client has explicit connect/read/write/pool timeouts, ignores proxy
+environment variables, refuses redirects, captures only a bounded response
+prefix, and does not log payloads, credentials, endpoint secrets, or responses.
+Stop with SIGINT/SIGTERM for graceful completion of the current batch.
+
+## SSRF and production egress boundary
+
+Targets require HTTPS. HTTP can be enabled only in development and defaults on
+only there. Creation and every send resolve DNS and reject credentials,
+fragments, localhost names, non-global addresses, and IPv4-mapped IPv6 private
+addresses. Redirects are disabled.
+
+Application validation is not a complete SSRF boundary: DNS can change between
+validation and connection. Production must enforce external network egress
+allowlisting/filtering (for example, an egress proxy or firewall), deny cloud
+metadata and private networks, and control DNS. Allow only required destination
+ports/domains and monitor denied traffic.
+
+## Migrations, operations, and compatibility
+
+Apply schema changes before API rollout:
+
+```bash
+alembic upgrade head
+alembic downgrade base  # destructive; development rollback only
+```
+
+`migrations/env.py` uses the configured async database URL. Set
+`AUTO_CREATE_SCHEMA=false` in staging/production; those environments reject
+local schema auto-creation and require all three secrets at 32+ characters.
+Configuration includes payload/response/idempotency limits, worker lease/poll/
+batch/concurrency, four HTTP timeout phases, and retry/backoff bounds.
+
+Health endpoints: `/livez`, database `/readyz`, and deprecated `/health`.
+Existing `/users`, `/auth`, and `/items` routes and JWT behavior are retained,
+including owned-item delete-orphan cascading. API docs are at `/docs` and
+`/redoc` when enabled. CORS remains opt-in and, when configured, accepts the JWT,
+API-key, idempotency, content, and request-ID headers.

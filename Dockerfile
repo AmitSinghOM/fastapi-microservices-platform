@@ -15,8 +15,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy application and versioned migration assets.
 COPY app/ ./app/
+COPY alembic.ini ./alembic.ini
+COPY migrations/ ./migrations/
 
 # Run as an unprivileged user. Without this the process runs as uid 0, so a
 # remote code execution bug starts with root inside the container, and any

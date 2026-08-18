@@ -5,9 +5,12 @@ from app.db import get_db
 from app.services.factory import ServiceFactory
 from app.services.user_service import UserService
 from app.services.item_service import ItemService
+from app.services.webhook_service import WebhookService
 
 
-async def get_service_factory(db: AsyncSession = Depends(get_db)) -> ServiceFactory:
+async def get_service_factory(
+    db: AsyncSession = Depends(get_db),
+) -> ServiceFactory:
     """Dependency to get service factory."""
     return ServiceFactory(db=db)
 
@@ -24,3 +27,10 @@ async def get_item_service(
 ) -> ItemService:
     """Dependency to get item service via factory."""
     return factory.get_item_service()
+
+
+async def get_webhook_service(
+    factory: ServiceFactory = Depends(get_service_factory),
+) -> WebhookService:
+    """Dependency for webhook control-plane operations."""
+    return factory.get_webhook_service()

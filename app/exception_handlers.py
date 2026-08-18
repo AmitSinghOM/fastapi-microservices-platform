@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.exceptions import (
     AlreadyExistsError,
     AppException,
+    ConflictError,
     DatabaseError,
     ForbiddenError,
     NotFoundError,
@@ -50,6 +51,7 @@ async def app_exception_handler(
     status_map = {
         NotFoundError: status.HTTP_404_NOT_FOUND,
         AlreadyExistsError: status.HTTP_409_CONFLICT,
+        ConflictError: status.HTTP_409_CONFLICT,
         ValidationError: status.HTTP_400_BAD_REQUEST,
         UnauthorizedError: status.HTTP_401_UNAUTHORIZED,
         ForbiddenError: status.HTTP_403_FORBIDDEN,
@@ -63,7 +65,7 @@ async def app_exception_handler(
     log = logger.error if status_code >= 500 else logger.warning
     log("Application error %s: %s", exc.code, exc.message)
     headers = (
-        {"WWW-Authenticate": "Bearer"}
+        {"WWW-Authenticate": exc.auth_scheme}
         if isinstance(exc, UnauthorizedError)
         else None
     )
