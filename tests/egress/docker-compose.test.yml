@@ -1,7 +1,7 @@
 services:
   egress-proxy:
     volumes:
-      - ./tests/egress/squid.test.conf:/etc/squid/conf.d/default.conf:ro
+      - ./tests/egress/squid.test.conf:/etc/squid/webhook-conf.d/default.conf:ro
     depends_on:
       egress-dns:
         condition: service_started
