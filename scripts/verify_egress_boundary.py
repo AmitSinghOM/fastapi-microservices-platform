@@ -42,7 +42,8 @@ def expect_denied(host: str, port: int = 443) -> None:
 
 def query_rebind_once() -> None:
     labels = b"".join(
-        bytes((len(label),)) + label.encode() for label in "rebind.test".split(".")
+        bytes((len(label),)) + label.encode()
+        for label in "rebind.test".split(".")
     ) + b"\x00"
     packet = struct.pack("!HHHHHH", 7, 0x0100, 1, 0, 0, 0)
     packet += labels + struct.pack("!HH", 1, 1)
@@ -52,7 +53,9 @@ def query_rebind_once() -> None:
     response, _ = client.recvfrom(4096)
     client.close()
     if socket.inet_aton("93.184.216.34") not in response:
-        raise AssertionError("controlled DNS did not return the public first view")
+        raise AssertionError(
+            "controlled DNS did not return the public first view"
+        )
 
 
 def prove_direct_egress_is_blocked() -> None:
@@ -63,6 +66,7 @@ def prove_direct_egress_is_blocked() -> None:
     direct.close()
     raise AssertionError("worker network unexpectedly permits direct egress")
 
+
 def prove_tls_and_sni() -> None:
     connection, status = tunnel("www.example.com")
     if status != 200:
@@ -70,7 +74,10 @@ def prove_tls_and_sni() -> None:
         raise AssertionError(f"public TLS tunnel returned {status}")
     context = ssl.create_default_context()
     tls = context.wrap_socket(connection, server_hostname="www.example.com")
-    tls.sendall(b"HEAD / HTTP/1.1\r\nHost: www.example.com\r\nConnection: close\r\n\r\n")
+    tls.sendall(
+        b"HEAD / HTTP/1.1\r\nHost: www.example.com\r\n"
+        b"Connection: close\r\n\r\n"
+    )
     if not tls.recv(64).startswith(b"HTTP/"):
         raise AssertionError("valid TLS/SNI target did not answer")
     tls.close()
@@ -81,7 +88,9 @@ def prove_tls_and_sni() -> None:
         raise AssertionError(f"second public TLS tunnel returned {status}")
     try:
         context.wrap_socket(connection, server_hostname="invalid.example")
-    except ssl.SSLCertVerificationError:
+    except ssl.SSLError:
+        # Receivers may reject unknown SNI before sending a certificate, or
+        # certificate verification may reject the resulting identity.
         connection.close()
     else:
         raise AssertionError("TLS hostname mismatch was accepted")
