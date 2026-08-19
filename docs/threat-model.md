@@ -48,7 +48,7 @@ compromised dependencies or workers, and operators making mistakes.
 | Replay or duplicate | Repeated business action | Stable event ID; documented at-least-once contract | Shared replay quotas and audit |
 | Idempotency race | Duplicate event/fan-out | Unique constraint and conflict handling | Continue PostgreSQL stress coverage |
 | Lease theft/stale write | Duplicate or corrupt outcome | Skip-locked claims and token finalization | Heartbeats and slot-aware claims |
-| SSRF/DNS rebinding | Internal service or metadata access | URL/DNS checks, no redirects, HTTPS deployed | Mandatory proxy/firewall and bypass corpus |
+| SSRF/DNS rebinding | Internal service or metadata access | URL/all-answer DNS checks, no redirects, HTTPS:443 deployed; isolated CONNECT proxy independently resolves and denies special networks | Equivalent policy required outside Compose; recurring bypass corpus |
 | Receiver resource abuse | Socket, connection, or retry exhaustion | Timeouts, response cap, bounded concurrency | Fairness, circuit breakers, retry budgets |
 | Payload/response leakage | Customer-data exposure | No body/secret logging; response cap | Retention, encryption, access audit |
 | Database exhaustion | API and queue outage | Bounded pools/batches; measured baseline | Admission limits and fair scheduling |
@@ -76,6 +76,10 @@ remain required before broad multi-tenant production claims.
   never logged.
 - Automatic delivery remains at least once; duplicates are never presented as
   impossible.
+- Deployed workers use an explicit CONNECT proxy, ignore ambient proxy bypass
+  variables, and cannot route directly to the outbound network.
+- Security deny metrics and audit logs contain only fixed layer/reason values,
+  never destination URLs, hosts, addresses, credentials, queries, or bodies.
 ## Operational requirements
 
 Production deployments must use HTTPS, stable managed secrets, least-privilege
@@ -92,8 +96,11 @@ and avoid logging additional sensitive bodies during investigation.
 
 Required security tests include tenant isolation, concurrent idempotency,
 competing claims, expired-lease recovery, stale-token rejection, signature
-vectors, URL bypass cases, response bounds, and migration checks. Network-level
-DNS rebinding validation remains a Phase 3 completion requirement.
+vectors, URL bypass cases, response bounds, and migration checks. The Phase 3
+container harness additionally checks alternate IP notation, mapped IPv6,
+CNAME/private and mixed DNS answers, split-view and public-to-private rebinding,
+redirect refusal, non-443 denial, direct-socket and `NO_PROXY` bypass attempts,
+end-to-end TLS/SNI, hostname mismatch rejection, and secret-free logs.
 
 Review this model for any change to authentication, authorization, secrets,
 cryptography, event envelopes, persistence, retries, replay, workers, egress,

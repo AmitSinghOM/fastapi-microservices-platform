@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application and versioned migration assets.
 COPY app/ ./app/
+COPY scripts/ ./scripts/
 COPY alembic.ini ./alembic.ini
 COPY migrations/ ./migrations/
 

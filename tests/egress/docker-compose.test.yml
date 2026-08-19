@@ -1,0 +1,36 @@
+services:
+  egress-proxy:
+    volumes:
+      - ./tests/egress/squid.test.conf:/etc/squid/conf.d/default.conf:ro
+    depends_on:
+      egress-dns:
+        condition: service_started
+
+  egress-dns:
+    build: .
+    command: ["python", "scripts/phase3_dns_server.py"]
+    cap_add: [NET_BIND_SERVICE]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      outbound:
+        ipv4_address: 172.29.0.53
+      worker-proxy:
+        ipv4_address: 172.28.0.53
+
+  egress-probe:
+    build: .
+    command: ["python", "scripts/verify_egress_boundary.py"]
+    environment:
+      HTTP_PROXY: http://untrusted.invalid:9999
+      HTTPS_PROXY: http://untrusted.invalid:9999
+      NO_PROXY: "*"
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+      egress-dns:
+        condition: service_started
+    networks:
+      worker-proxy:
+        ipv4_address: 172.28.0.54

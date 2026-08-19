@@ -10,8 +10,11 @@ select = ["E4", "E7", "E9", "F"]
 python_version = "3.11"
 files = [
   "app/config.py",
+  "app/security_observability.py",
   "app/schemas",
   "app/webhook_security.py",
+  "scripts/phase3_dns_server.py",
+  "scripts/verify_egress_boundary.py",
 ]
 check_untyped_defs = true
 ignore_missing_imports = true

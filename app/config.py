@@ -2,6 +2,7 @@ import secrets
 import sys
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -57,6 +58,7 @@ class Settings(BaseSettings):
         default=5.0, gt=0, le=60
     )
     worker_shutdown_grace_seconds: float = Field(default=45.0, gt=0, le=600)
+    worker_egress_proxy_url: str | None = None
     http_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     http_read_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     http_write_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
@@ -107,6 +109,36 @@ class Settings(BaseSettings):
             raise ValueError(
                 "ALLOW_HTTP_WEBHOOKS may be true only in development"
             )
+
+        if not self.worker_egress_proxy_url:
+            if deployed:
+                raise ValueError(
+                    "WORKER_EGRESS_PROXY_URL is required when deployed"
+                )
+        else:
+            try:
+                proxy = urlsplit(self.worker_egress_proxy_url)
+                proxy_port = proxy.port
+            except ValueError as exc:
+                raise ValueError(
+                    "WORKER_EGRESS_PROXY_URL is invalid"
+                ) from exc
+            if (
+                proxy.scheme.lower() != "http"
+                or not proxy.hostname
+                or proxy.username
+                or proxy.password
+                or proxy.query
+                or proxy.fragment
+                or proxy.path not in {"", "/"}
+                or proxy_port is None
+                or proxy.hostname.rstrip(".").lower() == "localhost"
+            ):
+                raise ValueError(
+                    "WORKER_EGRESS_PROXY_URL must be a credential-free "
+                    "internal http://host:port URL without a path, query, "
+                    "or fragment"
+                )
         if (
             self.webhook_backoff_cap_seconds
             < self.webhook_backoff_base_seconds

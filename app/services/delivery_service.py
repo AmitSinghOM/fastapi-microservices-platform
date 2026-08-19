@@ -14,6 +14,11 @@ from sqlalchemy.orm import joinedload
 
 from app.config import Settings
 from app.models import Delivery, DeliveryAttempt
+from app.security_observability import (
+    SecurityDenyReason,
+    SecurityLayer,
+    record_security_deny,
+)
 from app.webhook_security import (
     UnsafeWebhookUrl,
     endpoint_secret,
@@ -261,10 +266,19 @@ class DeliveryService:
             except TimeoutError:
                 retryable = True
                 error = "attempt_timeout"
+            except httpx.ProxyError:
+                error = "egress_proxy_denied"
+                record_security_deny(
+                    SecurityLayer.PROXY,
+                    SecurityDenyReason.PROXY_CONNECT_DENIED,
+                )
             except (httpx.TimeoutException, httpx.NetworkError) as exc:
                 retryable = True
                 error = type(exc).__name__
-            except (UnsafeWebhookUrl, TypeError, ValueError) as exc:
+            except UnsafeWebhookUrl as exc:
+                error = f"unsafe_webhook_url:{exc.reason.value}"
+                record_security_deny(SecurityLayer.ATTEMPT, exc.reason)
+            except (TypeError, ValueError) as exc:
                 error = type(exc).__name__
 
         return AttemptResult(

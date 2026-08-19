@@ -14,9 +14,15 @@ from base64 import urlsafe_b64encode
 from typing import Any
 from urllib.parse import urlsplit
 
+from app.security_observability import SecurityDenyReason
+
 
 class UnsafeWebhookUrl(ValueError):
-    """Raised when a webhook target violates outbound URL policy."""
+    """Raised with a bounded reason when a target violates egress policy."""
+
+    def __init__(self, message: str, reason: SecurityDenyReason):
+        super().__init__(message)
+        self.reason = reason
 
 
 def generate_api_key() -> tuple[str, str]:
@@ -66,39 +72,68 @@ def sign_payload(
 
 
 def _require_global(address: str) -> None:
-    ip = ipaddress.ip_address(address.split("%", 1)[0])
+    try:
+        ip = ipaddress.ip_address(address.split("%", 1)[0])
+    except ValueError:
+        raise
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
     if not ip.is_global:
-        raise UnsafeWebhookUrl("Webhook host resolves to a non-global address")
+        raise UnsafeWebhookUrl(
+            "Webhook host resolves to a non-global address",
+            SecurityDenyReason.NON_GLOBAL_ADDRESS,
+        )
 
 
 async def validate_webhook_url(url: str, allow_http: bool = False) -> str:
-    """Resolve and validate a target; callers must repeat this before send.
+    """Resolve every answer and validate a target immediately before send.
 
-    DNS validation reduces SSRF risk, but production must also enforce an
-    external network egress allowlist/filter because DNS can change after
-    validation and application checks are not a network security boundary.
+    The dedicated egress proxy repeats destination resolution and network
+    policy enforcement after this defense-in-depth application check.
     """
     if len(url) > 2_048:
-        raise UnsafeWebhookUrl("Webhook URL is too long")
+        raise UnsafeWebhookUrl(
+            "Webhook URL is too long", SecurityDenyReason.URL_TOO_LONG
+        )
     try:
         parsed = urlsplit(url)
         port = parsed.port
     except ValueError as exc:
-        raise UnsafeWebhookUrl("Webhook URL is invalid") from exc
+        raise UnsafeWebhookUrl(
+            "Webhook URL is invalid", SecurityDenyReason.INVALID_URL
+        ) from exc
     allowed_schemes = {"https"} | ({"http"} if allow_http else set())
     if parsed.scheme.lower() not in allowed_schemes:
-        raise UnsafeWebhookUrl("Webhook URL scheme is not allowed")
-    if not parsed.hostname or parsed.username or parsed.password:
         raise UnsafeWebhookUrl(
-            "Webhook URL must have a host and no credentials"
+            "Webhook URL scheme is not allowed",
+            SecurityDenyReason.SCHEME_NOT_ALLOWED,
+        )
+    if not parsed.hostname:
+        raise UnsafeWebhookUrl(
+            "Webhook URL must have a host",
+            SecurityDenyReason.INVALID_URL,
+        )
+    if parsed.username or parsed.password:
+        raise UnsafeWebhookUrl(
+            "Webhook URL credentials are not allowed",
+            SecurityDenyReason.CREDENTIALS_FORBIDDEN,
         )
     if parsed.fragment:
-        raise UnsafeWebhookUrl("Webhook URL fragments are not allowed")
+        raise UnsafeWebhookUrl(
+            "Webhook URL fragments are not allowed",
+            SecurityDenyReason.FRAGMENT_FORBIDDEN,
+        )
+    if not allow_http and (port or 443) != 443:
+        raise UnsafeWebhookUrl(
+            "Webhook URL port must be 443",
+            SecurityDenyReason.PORT_NOT_ALLOWED,
+        )
     hostname = parsed.hostname.rstrip(".").lower()
     if hostname == "localhost" or hostname.endswith(".localhost"):
-        raise UnsafeWebhookUrl("Localhost webhook targets are not allowed")
+        raise UnsafeWebhookUrl(
+            "Localhost webhook targets are not allowed",
+            SecurityDenyReason.LOCALHOST_FORBIDDEN,
+        )
     try:
         _require_global(hostname)
         return url
@@ -112,10 +147,16 @@ async def validate_webhook_url(url: str, allow_http: bool = False) -> str:
             type=socket.SOCK_STREAM,
         )
     except (socket.gaierror, UnicodeError) as exc:
-        raise UnsafeWebhookUrl("Webhook host could not be resolved") from exc
+        raise UnsafeWebhookUrl(
+            "Webhook host could not be resolved",
+            SecurityDenyReason.DNS_UNRESOLVED,
+        ) from exc
     addresses = {result[4][0] for result in results}
     if not addresses:
-        raise UnsafeWebhookUrl("Webhook host did not resolve")
+        raise UnsafeWebhookUrl(
+            "Webhook host did not resolve",
+            SecurityDenyReason.DNS_UNRESOLVED,
+        )
     for address in addresses:
         _require_global(str(address))
     return url

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
 from app.db import Base, get_db
 from app.main import app
 from app.middleware import reset_rate_limits
+from app.security_observability import reset_security_deny_counts
 
 pytest_plugins = ("pytest_asyncio",)
 
@@ -30,10 +31,12 @@ test_async_session = async_sessionmaker(
 
 @pytest.fixture(autouse=True)
 def clear_rate_limits():
-    """Reset process-local limits between tests."""
+    """Reset process-local limits and security counters between tests."""
     reset_rate_limits()
+    reset_security_deny_counts()
     yield
     reset_rate_limits()
+    reset_security_deny_counts()
 
 
 @pytest_asyncio.fixture

@@ -21,6 +21,10 @@ from app.models import (
     User,
     WebhookEndpoint,
 )
+from app.security_observability import (
+    SecurityLayer,
+    record_security_deny,
+)
 from app.webhook_security import (
     UnsafeWebhookUrl,
     canonical_json,
@@ -255,6 +259,7 @@ class WebhookService:
                 url, bool(self.settings.allow_http_webhooks)
             )
         except UnsafeWebhookUrl as exc:
+            record_security_deny(SecurityLayer.ADMISSION, exc.reason)
             raise ValidationError(str(exc), "url") from exc
         now = utcnow()
         endpoint = WebhookEndpoint(
@@ -313,6 +318,7 @@ class WebhookService:
                     changes["url"], bool(self.settings.allow_http_webhooks)
                 )
             except UnsafeWebhookUrl as exc:
+                record_security_deny(SecurityLayer.ADMISSION, exc.reason)
                 raise ValidationError(str(exc), "url") from exc
         for field, value in changes.items():
             setattr(endpoint, field, value)

@@ -11,7 +11,7 @@ API keys and organization membership is the management authorization boundary.
 ```text
 JWT client -> FastAPI control plane -> PostgreSQL/SQLite
 producer --X-API-Key--> POST /v1/events -> event + delivery fan-out transaction
-worker -> short lease claim -> HTTPS outside transaction -> guarded finalize
+worker -> short lease claim -> CONNECT-only egress proxy -> HTTPS -> guarded finalize
 ```
 
 The database is the durable queue. Deliveries use
@@ -118,27 +118,41 @@ work or signatures. Replay deliberately copies the original snapshot. Delivery
 attempts remain insert-only in application behavior and uniquely numbered per
 delivery; crash windows may leave intentional numbering gaps.
 
-The client has explicit connect/read/write/pool timeouts, ignores proxy
-environment variables, refuses redirects, captures only a bounded response
-prefix, and does not log payloads, credentials, endpoint secrets, or responses.
-API-key `last_used_at` writes are coalesced in memory and flushed periodically,
-so ingestion no longer waits for a usage-only database commit and the timestamp
-is intentionally eventually consistent. API and worker database pools have
-separate bounded size, overflow, and wait settings. SQLite is for local/test use
-and does not provide PostgreSQL's concurrent claim semantics.
+The client has explicit connect/read/write/pool timeouts, pins the configured
+HTTP CONNECT proxy, ignores proxy environment variables (including `NO_PROXY`),
+refuses redirects, and disables keepalive so every attempt opens a fresh tunnel
+and receives a fresh proxy DNS/policy decision. It captures only a bounded
+response prefix and does not log payloads, credentials, endpoint secrets,
+destinations, or responses. API-key `last_used_at` writes are coalesced in
+memory and flushed periodically, so ingestion no longer waits for a usage-only
+database commit and the timestamp is intentionally eventually consistent. API
+and worker database pools have separate bounded size, overflow, and wait
+settings. SQLite is for local/test use and does not provide PostgreSQL's
+concurrent claim semantics.
 
 ## SSRF and production egress boundary
 
-Targets require HTTPS. HTTP can be enabled only in development and defaults on
-only there. Creation and every send resolve DNS and reject credentials,
-fragments, localhost names, non-global addresses, and IPv4-mapped IPv6 private
-addresses. Redirects are disabled.
+Targets require HTTPS and effective destination port 443 outside development.
+HTTP can be enabled only in development and defaults on only there. Creation
+and every send resolve all DNS answers and reject credentials, fragments,
+localhost names, non-global addresses, and IPv4-mapped IPv6 private addresses.
+Redirects are disabled.
 
-Application validation is not a complete SSRF boundary: DNS can change between
-validation and connection. Production must enforce external network egress
-allowlisting/filtering (for example, an egress proxy or firewall), deny cloud
-metadata and private networks, and control DNS. Allow only required destination
-ports/domains and monitor denied traffic.
+Compose places workers only on internal backend and worker-proxy networks. A
+dedicated, digest-pinned Squid service is the sole member that also joins the
+outbound network. It accepts CONNECT only from the worker network, permits only
+TCP 443, independently resolves destinations, and denies private, link-local,
+metadata, cluster/service/database, reserved, mapped, and local IPv6 networks.
+TLS remains end to end, so HTTPX performs normal certificate and SNI checks.
+The proxy is not published, runs without root or Linux capabilities on a
+read-only filesystem, and does not log destination-bearing requests.
+
+`WORKER_EGRESS_PROXY_URL` is mandatory in staging and production and must be a
+credential-free internal `http://host:port` URL. Application checks remain
+defense in depth; deployments that replace Compose must provide an equivalent
+independent DNS and network policy. See
+[the Phase 3 boundary](docs/phase3-egress-boundary.md) for the deny corpus and
+validation procedure.
 
 ## Migrations, operations, and compatibility
 
@@ -154,9 +168,10 @@ backfills canonical event envelopes and endpoint snapshots; historical endpoint
 state can only reflect what is visible during that upgrade. Set
 `AUTO_CREATE_SCHEMA=false` in staging/production; those environments reject
 local schema auto-creation and require all three secrets at 32+ characters.
-Configuration includes independent API/worker database pools, API-key usage
-flush bounds, payload/response/idempotency limits, worker lease/heartbeat/
-attempt/drain bounds, four HTTP timeout phases, and retry/backoff bounds.
+Configuration includes independent API/worker database pools, an explicit
+worker egress proxy, API-key usage flush bounds, payload/response/idempotency
+limits, worker lease/heartbeat/attempt/drain bounds, four HTTP timeout phases,
+and retry/backoff bounds.
 
 Health endpoints: `/livez`, database `/readyz`, and deprecated `/health`.
 Existing `/users`, `/auth`, and `/items` routes and JWT behavior are retained,

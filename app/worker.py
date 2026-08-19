@@ -80,6 +80,28 @@ async def run_delivery_loop(
     await asyncio.gather(*in_flight, return_exceptions=True)
 
 
+def create_http_client(settings: Settings) -> httpx.AsyncClient:
+    """Build a proxy-pinned client that ignores ambient proxy bypasses."""
+    timeout = httpx.Timeout(
+        connect=settings.http_connect_timeout_seconds,
+        read=settings.http_read_timeout_seconds,
+        write=settings.http_write_timeout_seconds,
+        pool=settings.http_pool_timeout_seconds,
+    )
+    limits = httpx.Limits(
+        max_connections=settings.worker_concurrency,
+        # A fresh CONNECT tunnel forces proxy DNS/policy evaluation per attempt.
+        max_keepalive_connections=0,
+    )
+    return httpx.AsyncClient(
+        timeout=timeout,
+        limits=limits,
+        proxy=settings.worker_egress_proxy_url,
+        trust_env=False,
+        follow_redirects=False,
+    )
+
+
 async def run_worker() -> None:
     settings = get_settings()
     stop = asyncio.Event()
@@ -92,24 +114,9 @@ async def run_worker() -> None:
         except NotImplementedError:
             pass
 
-    timeout = httpx.Timeout(
-        connect=settings.http_connect_timeout_seconds,
-        read=settings.http_read_timeout_seconds,
-        write=settings.http_write_timeout_seconds,
-        pool=settings.http_pool_timeout_seconds,
-    )
-    limits = httpx.Limits(
-        max_connections=settings.worker_concurrency,
-        max_keepalive_connections=settings.worker_concurrency,
-    )
     database = create_database_resources(settings, "worker")
     try:
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            limits=limits,
-            trust_env=False,
-            follow_redirects=False,
-        ) as client:
+        async with create_http_client(settings) as client:
             service = DeliveryService(
                 database.session_factory, client, settings
             )

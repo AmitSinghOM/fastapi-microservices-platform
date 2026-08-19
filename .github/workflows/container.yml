@@ -3,21 +3,21 @@ name: Container
 on:
   push:
     branches: [main]
-    paths:
+    paths: &container-paths
       - "Dockerfile"
       - ".dockerignore"
       - "docker-compose.yml"
+      - "deploy/egress-proxy/**"
+      - "tests/egress/**"
+      - "scripts/phase3_*.py"
+      - "scripts/verify_egress_boundary.py"
+      - "app/config.py"
+      - "app/worker.py"
       - "requirements*.txt"
       - "alembic.ini"
       - "migrations/**"
   pull_request:
-    paths:
-      - "Dockerfile"
-      - ".dockerignore"
-      - "docker-compose.yml"
-      - "requirements*.txt"
-      - "alembic.ini"
-      - "migrations/**"
+    paths: *container-paths
   workflow_dispatch:
 
 permissions:
@@ -28,10 +28,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-egress:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Build image without publishing
-        run: docker build --tag webhook-platform:ci .
+      - name: Validate Compose topology
+        run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml config --quiet
+      - name: Build images without publishing
+        run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml build egress-proxy egress-dns egress-probe
+      - name: Prove worker egress boundary
+        run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml up --abort-on-container-exit --exit-code-from egress-probe egress-probe
+      - name: Verify proxy logs contain no injected secret
+        run: |
+          docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml logs --no-color > /tmp/phase3-egress.log
+          if grep -Fq "phase3-secret-must-not-appear" /tmp/phase3-egress.log; then
+            echo "Injected destination secret appeared in container logs" >&2
+            exit 1
+          fi
+      - name: Tear down test topology
+        if: always()
+        run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml down --volumes --remove-orphans

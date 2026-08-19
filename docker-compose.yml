@@ -13,6 +13,7 @@ services:
       retries: 20
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks: [backend]
 
   migrate:
     build: .
@@ -29,6 +30,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks: [backend]
     restart: "no"
 
   api:
@@ -39,6 +41,7 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    networks: [backend]
     healthcheck:
       test:
         ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz')"]
@@ -47,15 +50,55 @@ services:
       start_period: 5s
       retries: 10
     restart: unless-stopped
+  egress-proxy:
+    build: deploy/egress-proxy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,uid=13,gid=13,mode=0700
+    networks:
+      worker-proxy:
+        ipv4_address: 172.28.0.2
+      outbound: {}
+    healthcheck:
+      test: ["CMD", "/usr/sbin/squid", "-k", "check", "-f", "/etc/squid/squid.conf"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
   worker:
     build: .
     command: ["python", "-m", "app.worker"]
-    environment: *app-environment
+    environment:
+      <<: *app-environment
+      # Explicit client configuration; HTTP(S)_PROXY and NO_PROXY are ignored.
+      WORKER_EGRESS_PROXY_URL: http://egress-proxy:3128
     depends_on:
       api:
         condition: service_healthy
+      egress-proxy:
+        condition: service_healthy
+    networks: [backend, worker-proxy]
     restart: unless-stopped
 
 volumes:
   postgres-data:
+
+networks:
+  backend:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.27.0.0/24
+  worker-proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+  outbound:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
