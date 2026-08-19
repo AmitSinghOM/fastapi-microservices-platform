@@ -156,24 +156,41 @@ these changes are committed and pushed before Phase 3 begins.
 
 **Purpose:** treat outbound connectivity as a core product security surface.
 
-- [ ] Require HTTPS in staging and production.
-- [ ] Continue rejecting credentials, fragments, redirects, localhost names,
+- [x] Require HTTPS in staging and production.
+- [x] Continue rejecting credentials, fragments, redirects, localhost names,
       private addresses, link-local addresses, metadata targets, IPv6 local
       ranges, and IPv4-mapped private IPv6 addresses.
-- [ ] Revalidate DNS immediately before each attempt.
-- [ ] Deploy workers behind a dedicated egress proxy or equivalent firewall and
+- [x] Revalidate DNS immediately before each attempt.
+- [x] Deploy workers behind a dedicated egress proxy or equivalent firewall and
       DNS policy so application checks are not the only control.
-- [ ] Deny private, cluster, service, control-plane, database, and cloud metadata
+- [x] Deny private, cluster, service, control-plane, database, and cloud metadata
       networks at the network layer.
-- [ ] Allow only required outbound ports, normally TCP 443.
-- [ ] Preserve TLS hostname verification and SNI through the egress path.
-- [ ] Add a bypass corpus covering alternate IP notation, CNAME chains,
+- [x] Allow only required outbound ports, normally TCP 443.
+- [x] Preserve TLS hostname verification and SNI through the egress path.
+- [x] Add a bypass corpus covering alternate IP notation, CNAME chains,
       split-horizon DNS, redirects, DNS rebinding, and proxy bypass.
-- [ ] Emit low-cardinality security metrics and auditable deny events without
+- [x] Emit low-cardinality security metrics and auditable deny events without
       exposing destination credentials.
 
-**Completion gate:** controlled DNS-rebinding and private-network test targets
-are blocked by the network layer even if application validation is bypassed.
+**Phase 3 evidence (2026-08-19):** `docs/phase3-egress-boundary.md` defines the
+application and network contracts. Staging/production require HTTPS on effective
+port 443 and an explicit credential-free proxy. Workers ignore ambient proxy
+variables, disable redirects and keepalive, and revalidate every DNS answer
+before each attempt. Compose isolates workers on internal networks and routes
+outbound CONNECT through an unprivileged, capability-free, read-only Squid
+container that independently resolves destinations, permits only TCP 443, and
+denies private, metadata, service, cluster, database, control-plane, mapped,
+local, and reserved networks. Fixed layer/reason counters and audit records do
+not accept destination context. All 100 SQLite/PostgreSQL tests passed locally;
+Ruff, mypy, compilation, and diagnostics passed. The controlled Linux container
+harness proved direct sockets fail, private/CNAME/mixed/split-view/rebound and
+non-443 targets receive proxy denials, valid TLS/SNI succeeds, mismatched TLS is
+rejected, and injected destination secrets do not appear in container logs.
+
+**Completion gate: passed on 2026-08-19.** GitHub CI run `32301923656` and
+container run `32301923677` passed on commit `46d2a15`. The network layer
+blocked controlled public-first/private-second DNS rebinding and private targets
+even though the probe bypassed application validation.
 
 ## Phase 4 — Admission control and tenant fairness
 
