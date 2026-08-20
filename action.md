@@ -197,21 +197,39 @@ even though the probe bypassed application validation.
 **Purpose:** prevent traffic spikes and noisy neighbors from overwhelming the
 shared database or worker fleet.
 
-- [ ] Add shared per-tenant event-rate and burst limits.
-- [ ] Add limits for deliveries per second, in-flight deliveries, endpoints per
+- [x] Add shared per-tenant event-rate and burst limits.
+- [x] Add limits for deliveries per second, in-flight deliveries, endpoints per
       project, fan-out per event, payload size, replay rate, and retained bytes.
-- [ ] Return `429` with bounded `Retry-After` for tenant quota exhaustion.
-- [ ] Return `503` for temporary global saturation or database protection.
-- [ ] Add a global maximum backlog and oldest-job-age admission threshold.
-- [ ] Replace global oldest-first claiming with tenant-fair scheduling, followed
+- [x] Return `429` with bounded `Retry-After` for tenant quota exhaustion.
+- [x] Return `503` for temporary global saturation or database protection.
+- [x] Add a global maximum backlog and oldest-job-age admission threshold.
+- [x] Replace global oldest-first claiming with tenant-fair scheduling, followed
       by endpoint fairness.
-- [ ] Add per-endpoint concurrency and rate limits.
-- [ ] Add a global concurrency governor tied to database and egress budgets.
-- [ ] Ensure API replica count cannot multiply database connections beyond the
+- [x] Add per-endpoint concurrency and rate limits.
+- [x] Add a global concurrency governor tied to database and egress budgets.
+- [x] Ensure API replica count cannot multiply database connections beyond the
       configured pool budget.
 
-**Completion gate:** when one tenant generates failing or excessive traffic,
-healthy tenants remain within two times their normal oldest-job-age baseline.
+**Phase 4 evidence (2026-08-20):**
+`docs/phase4-admission-fairness.md` defines shared token-bucket, saturation,
+HTTP error, fair-claim, lock-order, and deployment-budget contracts. PostgreSQL
+race tests prove distinct concurrent events share one tenant burst and competing
+workers collectively obey global, tenant, and endpoint caps. A controlled
+50-job excessive tenant remained unable to delay a healthy tenant beyond claim
+position two, and the healthy job's age at claim remained below twice its
+isolated baseline. Expired processing leases participate in oldest-due
+protection, idempotent repeats do not consume quota twice, and endpoint
+reactivation does not count itself against its limit. A populated disposable
+PostgreSQL database upgraded from `0003` to `0004`; delivery ownership and all
+quota state backfilled, and `alembic check` found no drift. Diagnostics, Ruff,
+configured mypy, compilation, 104 SQLite/non-PostgreSQL tests, and the complete
+112-test SQLite/PostgreSQL suite passed. The existing Passlib `crypt`
+deprecation warning remains unchanged.
+
+**Completion gate: passed on 2026-08-20.** Under the controlled excessive-tenant
+workload, the healthy tenant remained within two times its normal
+oldest-job-age baseline. Phase 5 must not begin until these uncommitted Phase 4
+changes are reviewed and any required remote gate is explicitly authorized.
 
 ## Phase 5 — Retry policy, dead-letter operations, and replay
 

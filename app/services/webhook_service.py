@@ -9,15 +9,22 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.admission import (
+    AdmissionController,
+    endpoint_quota_values,
+    tenant_quota_values,
+)
 from app.config import Settings
 from app.exceptions import ConflictError, NotFoundError, ValidationError
 from app.models import (
     ApiKey,
     Delivery,
+    EndpointQuotaState,
     Event,
     Organization,
     OrganizationMember,
     Project,
+    TenantQuotaState,
     User,
     WebhookEndpoint,
 )
@@ -90,6 +97,13 @@ class WebhookService:
         )
         self.db.add(organization)
         await self.db.flush()
+        self.db.add(
+            TenantQuotaState(
+                **tenant_quota_values(
+                    organization.id, self.settings, now
+                )
+            )
+        )
         self.db.add(
             OrganizationMember(
                 organization_id=organization.id,
@@ -261,7 +275,9 @@ class WebhookService:
         except UnsafeWebhookUrl as exc:
             record_security_deny(SecurityLayer.ADMISSION, exc.reason)
             raise ValidationError(str(exc), "url") from exc
-        now = utcnow()
+        now = await AdmissionController(
+            self.db, self.settings
+        ).check_endpoint_limit(project.organization_id, project.id)
         endpoint = WebhookEndpoint(
             public_id=str(uuid4()),
             project_id=project.id,
@@ -273,6 +289,12 @@ class WebhookService:
             updated_at=now,
         )
         self.db.add(endpoint)
+        await self.db.flush()
+        self.db.add(
+            EndpointQuotaState(
+                **endpoint_quota_values(endpoint.id, self.settings, now)
+            )
+        )
         await self.db.commit()
         await self.db.refresh(endpoint)
         return endpoint, endpoint_secret(
@@ -320,6 +342,14 @@ class WebhookService:
             except UnsafeWebhookUrl as exc:
                 record_security_deny(SecurityLayer.ADMISSION, exc.reason)
                 raise ValidationError(str(exc), "url") from exc
+        if changes.get("is_active") is True and not endpoint.is_active:
+            await AdmissionController(
+                self.db, self.settings
+            ).check_endpoint_limit(
+                project.organization_id,
+                project.id,
+                exclude_endpoint_id=endpoint.id,
+            )
         for field, value in changes.items():
             setattr(endpoint, field, value)
         endpoint.updated_at = utcnow()
@@ -380,7 +410,26 @@ class WebhookService:
                     "Idempotency-Key was already used with different content"
                 )
             return existing
-        now = utcnow()
+        controller = AdmissionController(self.db, self.settings)
+        _, tenant_state, now = await controller.lock_global_tenant(
+            project.organization_id
+        )
+        existing = await self.db.scalar(
+            select(Event).where(
+                Event.project_id == project_id,
+                Event.idempotency_key == idempotency_key,
+            )
+        )
+        if existing:
+            content_changed = (
+                existing.event_type != event_type
+                or existing.payload_hash != fingerprint
+            )
+            if content_changed:
+                raise ConflictError(
+                    "Idempotency-Key was already used with different content"
+                )
+            return existing
         event_public_id = str(uuid4())
         canonical_envelope = canonical_json(
             {
@@ -389,6 +438,21 @@ class WebhookService:
                 "created_at": now.isoformat(),
                 "data": payload,
             }
+        )
+        endpoints = list(
+            await self.db.scalars(
+                select(WebhookEndpoint).where(
+                    WebhookEndpoint.project_id == project_id,
+                    WebhookEndpoint.is_active.is_(True),
+                )
+            )
+        )
+        await controller.admit_event_locked(
+            tenant_state,
+            now,
+            project.organization_id,
+            len(endpoints),
+            len(canonical_envelope),
         )
         event = Event(
             public_id=event_public_id,
@@ -421,16 +485,11 @@ class WebhookService:
             raise ConflictError(
                 "Idempotency-Key was already used with different content"
             )
-        endpoints = await self.db.scalars(
-            select(WebhookEndpoint).where(
-                WebhookEndpoint.project_id == project_id,
-                WebhookEndpoint.is_active.is_(True),
-            )
-        )
         for endpoint in endpoints:
             self.db.add(
                 Delivery(
                     public_id=str(uuid4()),
+                    organization_id=project.organization_id,
                     event_id=event.id,
                     endpoint_id=endpoint.id,
                     endpoint_public_id_snapshot=endpoint.public_id,
@@ -509,9 +568,12 @@ class WebhookService:
         self, user_id: int, project_id: str, delivery_id: str
     ) -> Delivery:
         original = await self.get_delivery(user_id, project_id, delivery_id)
-        now = utcnow()
+        now = await AdmissionController(
+            self.db, self.settings
+        ).admit_replay(original.organization_id)
         replay = Delivery(
             public_id=str(uuid4()),
+            organization_id=original.organization_id,
             event_id=original.event_id,
             endpoint_id=original.endpoint_id,
             replay_of_delivery_id=original.id,

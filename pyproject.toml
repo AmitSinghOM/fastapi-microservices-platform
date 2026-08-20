@@ -9,7 +9,9 @@ select = ["E4", "E7", "E9", "F"]
 [tool.mypy]
 python_version = "3.11"
 files = [
+  "app/admission.py",
   "app/config.py",
+  "app/scheduling.py",
   "app/security_observability.py",
   "app/schemas",
   "app/webhook_security.py",

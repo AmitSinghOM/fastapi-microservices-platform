@@ -8,12 +8,12 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import joinedload
 
 from app.config import Settings
 from app.models import Delivery, DeliveryAttempt
+from app.scheduling import select_fair_deliveries
 from app.security_observability import (
     SecurityDenyReason,
     SecurityLayer,
@@ -49,6 +49,8 @@ async def database_now(session: AsyncSession) -> datetime:
 class ClaimedDelivery:
     id: int
     public_id: str
+    organization_id: int
+    endpoint_id: int
     lease_token: str
     attempt_number: int
     endpoint_public_id: str
@@ -89,28 +91,10 @@ class DeliveryService:
         async with self.session_factory() as session:
             async with session.begin():
                 now = await database_now(session)
-                result = await session.scalars(
-                    select(Delivery)
-                    .options(joinedload(Delivery.event))
-                    .where(
-                        or_(
-                            and_(
-                                Delivery.status.in_(
-                                    ("pending", "retry_scheduled")
-                                ),
-                                Delivery.next_attempt_at <= now,
-                            ),
-                            and_(
-                                Delivery.status == "processing",
-                                Delivery.lease_expires_at <= now,
-                            ),
-                        )
-                    )
-                    .order_by(Delivery.next_attempt_at, Delivery.id)
-                    .limit(limit)
-                    .with_for_update(of=Delivery, skip_locked=True)
+                deliveries = await select_fair_deliveries(
+                    session, self.settings, now, limit
                 )
-                for delivery in result:
+                for delivery in deliveries:
                     token = str(uuid4())
                     delivery.status = "processing"
                     delivery.attempt_count += 1
@@ -123,6 +107,8 @@ class DeliveryService:
                         ClaimedDelivery(
                             id=delivery.id,
                             public_id=delivery.public_id,
+                            organization_id=delivery.organization_id,
+                            endpoint_id=delivery.endpoint_id,
                             lease_token=token,
                             attempt_number=delivery.attempt_count,
                             endpoint_public_id=(

@@ -130,6 +130,29 @@ and worker database pools have separate bounded size, overflow, and wait
 settings. SQLite is for local/test use and does not provide PostgreSQL's
 concurrent claim semantics.
 
+## Admission control and tenant fairness
+
+PostgreSQL-backed token buckets share event, delivery, and replay quotas across
+all API replicas. Endpoint creation/reactivation, per-event fan-out, retained
+event bytes, payload size, global backlog, and oldest-runnable-job age are also
+bounded. Tenant exhaustion returns `429 QUOTA_EXCEEDED` with a bounded
+`Retry-After`; global backlog or age protection returns `503
+SERVICE_SATURATED` without encouraging synchronized retries. An idempotent
+repeat returns its existing event without consuming quota again.
+
+Workers take a short global scheduler lock, account for all unexpired leases,
+then choose a bounded window with persistent tenant and endpoint round-robin
+cursors. Claims obey deployment-wide, tenant, and endpoint concurrency limits
+plus a shared endpoint token bucket. This keeps an older excessive backlog from
+starving another tenant while preserving lease and skip-locked ownership.
+
+Replica counts are explicit. Startup rejects configurations where multiplied
+API and worker pools exceed `DATABASE_CONNECTION_BUDGET`, where global worker
+concurrency exceeds total process slots or `WORKER_EGRESS_CONNECTION_BUDGET`,
+or where endpoint/tenant/global concurrency limits are inconsistent. See
+[the Phase 4 contract](docs/phase4-admission-fairness.md) for formulas, quota
+semantics, and PostgreSQL race/fairness evidence.
+
 ## SSRF and production egress boundary
 
 Targets require HTTPS and effective destination port 443 outside development.
@@ -165,10 +188,12 @@ alembic downgrade base  # destructive; development rollback only
 
 `migrations/env.py` uses the configured async database URL. Revision `0003`
 backfills canonical event envelopes and endpoint snapshots; historical endpoint
-state can only reflect what is visible during that upgrade. Set
-`AUTO_CREATE_SCHEMA=false` in staging/production; those environments reject
-local schema auto-creation and require all three secrets at 32+ characters.
-Configuration includes independent API/worker database pools, an explicit
+state can only reflect what is visible during that upgrade. Revision `0004`
+backfills delivery organization ownership and initializes global, tenant, and
+endpoint admission state. Set `AUTO_CREATE_SCHEMA=false` in staging/production;
+those environments reject local schema auto-creation and require all three
+secrets at 32+ characters. Configuration includes multiplied replica/database
+connection budgets, shared admission and worker concurrency limits, an explicit
 worker egress proxy, API-key usage flush bounds, payload/response/idempotency
 limits, worker lease/heartbeat/attempt/drain bounds, four HTTP timeout phases,
 and retry/backoff bounds.

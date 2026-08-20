@@ -94,6 +94,7 @@ async def seed_delivery(
             )
             delivery = Delivery(
                 public_id=str(uuid4()),
+                organization_id=organization.id,
                 event_id=event.id,
                 endpoint_id=endpoint.id,
                 endpoint_public_id_snapshot=endpoint.public_id,

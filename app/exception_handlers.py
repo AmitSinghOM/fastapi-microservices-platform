@@ -14,6 +14,8 @@ from app.exceptions import (
     DatabaseError,
     ForbiddenError,
     NotFoundError,
+    QuotaExceededError,
+    SaturationError,
     UnauthorizedError,
     ValidationError,
 )
@@ -55,6 +57,8 @@ async def app_exception_handler(
         ValidationError: status.HTTP_400_BAD_REQUEST,
         UnauthorizedError: status.HTTP_401_UNAUTHORIZED,
         ForbiddenError: status.HTTP_403_FORBIDDEN,
+        QuotaExceededError: status.HTTP_429_TOO_MANY_REQUESTS,
+        SaturationError: status.HTTP_503_SERVICE_UNAVAILABLE,
         DatabaseError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     }
     status_code = status_map.get(
@@ -64,11 +68,11 @@ async def app_exception_handler(
 
     log = logger.error if status_code >= 500 else logger.warning
     log("Application error %s: %s", exc.code, exc.message)
-    headers = (
-        {"WWW-Authenticate": exc.auth_scheme}
-        if isinstance(exc, UnauthorizedError)
-        else None
-    )
+    headers: dict[str, str] | None = None
+    if isinstance(exc, UnauthorizedError):
+        headers = {"WWW-Authenticate": exc.auth_scheme}
+    elif isinstance(exc, QuotaExceededError):
+        headers = {"Retry-After": str(exc.retry_after_seconds)}
     return create_error_response(
         status_code=status_code,
         code=exc.code,

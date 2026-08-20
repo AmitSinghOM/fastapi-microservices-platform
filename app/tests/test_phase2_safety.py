@@ -33,6 +33,8 @@ def fake_claim(number: int) -> ClaimedDelivery:
     return ClaimedDelivery(
         id=number,
         public_id=str(uuid4()),
+        organization_id=number,
+        endpoint_id=number,
         lease_token=str(uuid4()),
         attempt_number=1,
         endpoint_public_id=str(uuid4()),

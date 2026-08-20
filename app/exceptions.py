@@ -88,3 +88,26 @@ class DatabaseError(AppException):
             code="DATABASE_ERROR",
             details={"operation": operation},
         )
+
+
+class QuotaExceededError(AppException):
+    """A shared tenant quota rejected the request."""
+
+    def __init__(self, quota: str, retry_after_seconds: int):
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(
+            message="Tenant quota temporarily exhausted",
+            code="QUOTA_EXCEEDED",
+            details={"quota": quota},
+        )
+
+
+class SaturationError(AppException):
+    """Global queue or database protection rejected new work."""
+
+    def __init__(self, reason: str):
+        super().__init__(
+            message="Service is temporarily saturated",
+            code="SERVICE_SATURATED",
+            details={"reason": reason},
+        )

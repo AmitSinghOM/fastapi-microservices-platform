@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     worker_db_pool_size: int = Field(default=5, ge=1, le=100)
     worker_db_max_overflow: int = Field(default=5, ge=0, le=100)
     worker_db_pool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    api_replica_count: int = Field(default=1, ge=1, le=100)
+    worker_replica_count: int = Field(default=1, ge=1, le=100)
+    database_connection_budget: int = Field(default=20, ge=2, le=10_000)
 
     secret_key: str = ""
     api_key_pepper: str = ""
@@ -51,6 +54,11 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = Field(default=1.0, ge=0.05, le=60)
     worker_batch_size: int = Field(default=50, ge=1, le=500)
     worker_concurrency: int = Field(default=10, ge=1, le=100)
+    worker_global_concurrency: int = Field(default=10, ge=1, le=10_000)
+    worker_egress_connection_budget: int = Field(
+        default=10, ge=1, le=10_000
+    )
+    worker_candidate_scan_limit: int = Field(default=5_000, ge=100, le=50_000)
     worker_lease_seconds: int = Field(default=60, ge=5, le=3600)
     worker_heartbeat_seconds: float = Field(default=10.0, gt=0, le=600)
     worker_attempt_timeout_seconds: float = Field(default=30.0, gt=0, le=600)
@@ -68,6 +76,26 @@ class Settings(BaseSettings):
         ge=1,
         le=10_485_760,
     )
+    tenant_event_rate_per_second: float = Field(default=100.0, gt=0, le=100_000)
+    tenant_event_burst: int = Field(default=200, ge=1, le=1_000_000)
+    tenant_delivery_rate_per_second: float = Field(default=500.0, gt=0, le=1_000_000)
+    tenant_delivery_burst: int = Field(default=1_000, ge=1, le=10_000_000)
+    tenant_replay_rate_per_second: float = Field(default=10.0, gt=0, le=10_000)
+    tenant_replay_burst: int = Field(default=20, ge=1, le=100_000)
+    tenant_endpoints_per_project: int = Field(default=100, ge=1, le=100_000)
+    tenant_fanout_per_event: int = Field(default=100, ge=1, le=100_000)
+    tenant_in_flight_deliveries: int = Field(default=10, ge=1, le=100_000)
+    tenant_retained_bytes: int = Field(
+        default=1_073_741_824, ge=1_024, le=1_099_511_627_776
+    )
+    endpoint_concurrency: int = Field(default=10, ge=1, le=10_000)
+    endpoint_rate_per_second: float = Field(default=50.0, gt=0, le=100_000)
+    endpoint_rate_burst: int = Field(default=100, ge=1, le=1_000_000)
+    global_max_backlog: int = Field(default=100_000, ge=1, le=100_000_000)
+    global_oldest_due_admission_seconds: float = Field(
+        default=300.0, gt=0, le=86_400
+    )
+    quota_retry_after_max_seconds: int = Field(default=60, ge=1, le=3_600)
     webhook_response_max_bytes: int = Field(
         default=16_384,
         ge=0,
@@ -145,6 +173,48 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "WEBHOOK_BACKOFF_CAP_SECONDS must be at least the base"
+            )
+        total_connections = (
+            self.api_replica_count
+            * (self.api_db_pool_size + self.api_db_max_overflow)
+            + self.worker_replica_count
+            * (self.worker_db_pool_size + self.worker_db_max_overflow)
+        )
+        if total_connections > self.database_connection_budget:
+            raise ValueError(
+                "Replica database pools exceed DATABASE_CONNECTION_BUDGET"
+            )
+        worker_slots = self.worker_replica_count * self.worker_concurrency
+        if self.worker_global_concurrency > worker_slots:
+            raise ValueError(
+                "WORKER_GLOBAL_CONCURRENCY exceeds configured worker slots"
+            )
+        if (
+            self.worker_global_concurrency
+            > self.worker_egress_connection_budget
+        ):
+            raise ValueError(
+                "WORKER_GLOBAL_CONCURRENCY exceeds the egress budget"
+            )
+        if self.tenant_in_flight_deliveries > self.worker_global_concurrency:
+            raise ValueError(
+                "TENANT_IN_FLIGHT_DELIVERIES exceeds global concurrency"
+            )
+        if self.endpoint_concurrency > self.tenant_in_flight_deliveries:
+            raise ValueError(
+                "ENDPOINT_CONCURRENCY exceeds tenant in-flight limit"
+            )
+        if self.tenant_fanout_per_event > self.tenant_endpoints_per_project:
+            raise ValueError(
+                "TENANT_FANOUT_PER_EVENT exceeds endpoint limit"
+            )
+        if self.tenant_fanout_per_event > self.tenant_delivery_burst:
+            raise ValueError(
+                "TENANT_FANOUT_PER_EVENT exceeds delivery burst"
+            )
+        if self.tenant_retained_bytes <= self.webhook_payload_max_bytes:
+            raise ValueError(
+                "TENANT_RETAINED_BYTES must exceed the payload limit"
             )
         required_lease = (
             self.worker_attempt_timeout_seconds

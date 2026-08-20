@@ -4,6 +4,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -68,6 +69,9 @@ class Organization(Base):
         "OrganizationMember", cascade="all, delete-orphan"
     )
     projects = relationship("Project", cascade="all, delete-orphan")
+    quota_state = relationship(
+        "TenantQuotaState", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class OrganizationMember(Base):
@@ -149,6 +153,53 @@ class ApiKey(Base):
     project = relationship("Project", overlaps="api_keys")
 
 
+class GlobalControlState(Base):
+    __tablename__ = "global_control_state"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_global_control_singleton"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    tenant_cursor_organization_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class TenantQuotaState(Base):
+    __tablename__ = "tenant_quota_state"
+
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    event_tokens = Column(Float, nullable=False)
+    event_refilled_at = Column(DateTime(timezone=True), nullable=False)
+    delivery_tokens = Column(Float, nullable=False)
+    delivery_refilled_at = Column(DateTime(timezone=True), nullable=False)
+    replay_tokens = Column(Float, nullable=False)
+    replay_refilled_at = Column(DateTime(timezone=True), nullable=False)
+    endpoint_cursor_id = Column(Integer, nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+    organization = relationship("Organization", overlaps="quota_state")
+
+
+class EndpointQuotaState(Base):
+    __tablename__ = "endpoint_quota_state"
+
+    endpoint_id = Column(
+        Integer,
+        ForeignKey("webhook_endpoints.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    delivery_tokens = Column(Float, nullable=False)
+    refilled_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+    endpoint = relationship("WebhookEndpoint", overlaps="quota_state")
+
+
 class WebhookEndpoint(Base):
     __tablename__ = "webhook_endpoints"
     __table_args__ = (
@@ -178,6 +229,9 @@ class WebhookEndpoint(Base):
 
     project = relationship("Project", overlaps="endpoints")
     deliveries = relationship("Delivery", cascade="all, delete-orphan")
+    quota_state = relationship(
+        "EndpointQuotaState", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class Event(Base):
@@ -230,10 +284,23 @@ class Delivery(Base):
         ),
         Index("ix_deliveries_event", "event_id", "created_at"),
         Index("ix_deliveries_endpoint", "endpoint_id", "created_at"),
+        Index(
+            "ix_deliveries_fair_due",
+            "organization_id",
+            "endpoint_id",
+            "status",
+            "next_attempt_at",
+            "id",
+        ),
     )
 
     id = Column(Integer, primary_key=True)
     public_id = Column(String(36), unique=True, index=True, nullable=False)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     event_id = Column(
         Integer, ForeignKey("events.id", ondelete="CASCADE"), nullable=False
     )
