@@ -14,6 +14,11 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import Settings, get_settings
+from app.observability import (
+    instrument_engine,
+    observe_pool_acquisition,
+    set_pool_capacity,
+)
 
 
 class Base(DeclarativeBase):
@@ -46,6 +51,16 @@ def create_database_resources(
             pool_timeout=getattr(settings, f"{prefix}_pool_timeout_seconds"),
         )
     database_engine = create_async_engine(settings.database_url, **options)
+    instrument_engine(database_engine, role)
+    if settings.database_url.startswith("sqlite"):
+        set_pool_capacity(role, 1)
+    else:
+        prefix = "api_db" if role == "api" else "worker_db"
+        set_pool_capacity(
+            role,
+            getattr(settings, f"{prefix}_pool_size")
+            + getattr(settings, f"{prefix}_max_overflow"),
+        )
     session_factory = async_sessionmaker(
         database_engine,
         class_=AsyncSession,
@@ -74,12 +89,28 @@ async_session = api_database.session_factory
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:
-    async with async_session() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
+    started = asyncio.get_running_loop().time()
+    acquired = False
+    try:
+        async with engine.connect() as connection:
+            acquired = True
+            observe_pool_acquisition(
+                asyncio.get_running_loop().time() - started
+            )
+            async with AsyncSession(
+                bind=connection, expire_on_commit=False
+            ) as session:
+                try:
+                    yield session
+                except Exception:
+                    await session.rollback()
+                    raise
+    except Exception:
+        if not acquired:
+            observe_pool_acquisition(
+                asyncio.get_running_loop().time() - started, "error"
+            )
+        raise
 
 
 async def init_db() -> None:

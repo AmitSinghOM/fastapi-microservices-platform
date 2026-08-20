@@ -14,6 +14,7 @@ files = [
   "app/retry_policy.py",
   "app/scheduling.py",
   "app/security_observability.py",
+  "app/observability.py",
   "app/schemas",
   "app/webhook_security.py",
   "scripts/phase3_dns_server.py",

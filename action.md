@@ -271,25 +271,50 @@ marked complete until its independent observability and burst evidence exists.
 
 **Purpose:** scale from evidence rather than CPU or queue depth alone.
 
-- [ ] Export Prometheus-compatible metrics and OpenTelemetry traces.
-- [ ] Measure accepted, rejected, throttled, and idempotent events.
-- [ ] Measure runnable queue depth, total depth, oldest due-job age, enqueue,
+- [x] Export Prometheus-compatible metrics and OpenTelemetry traces.
+- [x] Measure accepted, rejected, throttled, and idempotent events.
+- [x] Measure runnable queue depth, total depth, oldest due-job age, enqueue,
       claim, completion, lease expiry, and stale-finalization rates.
-- [ ] Measure end-to-end delivery latency, attempts per success, HTTP classes,
+- [x] Measure end-to-end delivery latency, attempts per success, HTTP classes,
       DNS/TLS/connect/timeout failures, and circuit state.
-- [ ] Measure PostgreSQL pool wait, query latency, locks, WAL/IO, table growth,
+- [x] Measure PostgreSQL pool wait, query latency, locks, WAL/IO, table growth,
       dead tuples, and autovacuum behavior.
-- [ ] Keep tenant, event, and endpoint identifiers out of unrestricted metric
+- [x] Keep tenant, event, and endpoint identifiers out of unrestricted metric
       labels; place high-cardinality context in structured logs and traces.
-- [ ] Create queue-age, delivery-latency, failure-isolation, and database-health
+- [x] Create queue-age, delivery-latency, failure-isolation, and database-health
       dashboards and alerts.
-- [ ] Autoscale workers using oldest due-job age, runnable backlog per worker,
+- [x] Autoscale workers using oldest due-job age, runnable backlog per worker,
       arrival/completion rates, and worker utilization.
-- [ ] Bound scale-up by database connections, write capacity, egress sockets,
+- [x] Bound scale-up by database connections, write capacity, egress sockets,
       NAT limits, and destination concurrency.
 
-**Completion gate:** a declared 10× burst drains within the SLO window without
-connection-pool exhaustion or unhealthy-tenant impact.
+**Phase 6 evidence (2026-08-20):**
+`docs/phase6-observability-autoscaling.md` freezes the metric, trace, SLO,
+cardinality, database, and scale-budget contracts. The API and worker expose
+fixed-label Prometheus metrics; sampled OTLP/HTTP traces carry bounded W3C
+context through the durable event row. PostgreSQL-backed queue gauges,
+lifecycle counters, safe failure classes, pool/query instrumentation, recording
+and alert rules, four Grafana dashboards, a least-privilege monitoring role,
+and an operator-neutral autoscaling policy are included. Focused tests prove
+metric exposition, event outcomes, forbidden-label rejection, persisted trace
+context, identifier-free exposition, and authoritative queue collection. Ruff,
+mypy, compilation, 111 fast tests, and the complete 121-test
+SQLite/PostgreSQL suite passed. A disposable PostgreSQL database upgraded
+through `0006`, reported no Alembic drift, downgraded to `0005`, and re-upgraded.
+
+The local-only disposable-schema harness admitted 10,000 fan-out-one events
+over 60 seconds plus isolated and burst-time healthy-tenant probes. All 10,002
+deliveries succeeded with exactly 10,002 unique attempts and no attempt-count
+mismatch. The queue drained 7.49 seconds after arrival ended versus a declared
+300-second SLO; peak oldest due age was 8.67 seconds. Healthy-tenant latency
+was 51 ms against the declared 250 ms noise-floor objective. The five-slot
+pool peaked at five checked-out connections without timeout or overflow. The
+random benchmark schema was removed after the run.
+
+**Completion gate: passed on 2026-08-20.** The declared 10× burst drained
+within the SLO window without connection-pool exhaustion or unhealthy-tenant
+impact. Phase 7 must not begin until Phase 6 changes are reviewed and any
+required remote gate is explicitly authorized.
 
 ## Phase 7 — Tenant security and lifecycle
 

@@ -3,12 +3,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api_key_usage import api_key_usage_tracker
 from app.config import get_settings
 from app.db import close_database, database_is_ready, init_db
+from app.observability import (
+    QueueMetricsCollector,
+    flush_tracing,
+    instrument_fastapi,
+    metrics_payload,
+)
 from app.exception_handlers import register_exception_handlers
 from app.middleware import RateLimitMiddleware, RequestContextMiddleware
 from app.routers import (
@@ -21,21 +27,32 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize local resources and always close database connections."""
-    del app
+    """Initialize local resources and always close process resources."""
     settings = get_settings()
     if settings.auto_create_schema:
         await init_db()
+    collector = QueueMetricsCollector(
+        app.state.session_factory,
+        settings.observability_collection_seconds,
+        "api",
+    )
+    if settings.observability_enabled:
+        await collector.start()
     await api_key_usage_tracker.start()
     try:
         yield
     finally:
         await api_key_usage_tracker.stop()
+        if settings.observability_enabled:
+            await collector.stop()
+        flush_tracing()
         await close_database()
 
 
 def create_app() -> FastAPI:
     """Build a fully configured FastAPI application."""
+    from app.db import async_session
+
     settings = get_settings()
     app = FastAPI(
         title=settings.app_name,
@@ -63,6 +80,7 @@ def create_app() -> FastAPI:
             {"name": "health", "description": "Orchestrator health probes"},
         ],
     )
+    app.state.session_factory = async_session
 
     register_exception_handlers(app)
     app.add_middleware(GZipMiddleware, minimum_size=1_000)
@@ -125,6 +143,12 @@ def create_app() -> FastAPI:
     async def health_check() -> dict[str, str]:
         return {"status": "healthy"}
 
+    @app.get(settings.metrics_path, include_in_schema=False)
+    async def metrics() -> Response:
+        payload, content_type = metrics_payload()
+        return Response(payload, headers={"Content-Type": content_type})
+
+    instrument_fastapi(app, settings)
     return app
 
 

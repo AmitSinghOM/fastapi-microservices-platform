@@ -20,9 +20,9 @@ class Settings(BaseSettings):
 
     app_name: str = "FastAPI Webhook Platform"
     app_version: str = "3.0.0"
-    environment: Literal[
-        "development", "test", "staging", "production"
-    ] = "development"
+    environment: Literal["development", "test", "staging", "production"] = (
+        "development"
+    )
     debug: bool = False
     docs_enabled: bool = True
     example_items_enabled: bool = True
@@ -55,16 +55,12 @@ class Settings(BaseSettings):
     worker_batch_size: int = Field(default=50, ge=1, le=500)
     worker_concurrency: int = Field(default=10, ge=1, le=100)
     worker_global_concurrency: int = Field(default=10, ge=1, le=10_000)
-    worker_egress_connection_budget: int = Field(
-        default=10, ge=1, le=10_000
-    )
+    worker_egress_connection_budget: int = Field(default=10, ge=1, le=10_000)
     worker_candidate_scan_limit: int = Field(default=5_000, ge=100, le=50_000)
     worker_lease_seconds: int = Field(default=60, ge=5, le=3600)
     worker_heartbeat_seconds: float = Field(default=10.0, gt=0, le=600)
     worker_attempt_timeout_seconds: float = Field(default=30.0, gt=0, le=600)
-    worker_finalization_margin_seconds: float = Field(
-        default=5.0, gt=0, le=60
-    )
+    worker_finalization_margin_seconds: float = Field(default=5.0, gt=0, le=60)
     worker_shutdown_grace_seconds: float = Field(default=45.0, gt=0, le=600)
     worker_egress_proxy_url: str | None = None
     http_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
@@ -76,9 +72,13 @@ class Settings(BaseSettings):
         ge=1,
         le=10_485_760,
     )
-    tenant_event_rate_per_second: float = Field(default=100.0, gt=0, le=100_000)
+    tenant_event_rate_per_second: float = Field(
+        default=100.0, gt=0, le=100_000
+    )
     tenant_event_burst: int = Field(default=200, ge=1, le=1_000_000)
-    tenant_delivery_rate_per_second: float = Field(default=500.0, gt=0, le=1_000_000)
+    tenant_delivery_rate_per_second: float = Field(
+        default=500.0, gt=0, le=1_000_000
+    )
     tenant_delivery_burst: int = Field(default=1_000, ge=1, le=10_000_000)
     tenant_replay_rate_per_second: float = Field(default=10.0, gt=0, le=10_000)
     tenant_replay_burst: int = Field(default=20, ge=1, le=100_000)
@@ -111,19 +111,11 @@ class Settings(BaseSettings):
     webhook_max_delivery_age_seconds: int = Field(
         default=86_400, ge=60, le=2_592_000
     )
-    endpoint_retry_rate_per_second: float = Field(
-        default=0.1, gt=0, le=10_000
-    )
+    endpoint_retry_rate_per_second: float = Field(default=0.1, gt=0, le=10_000)
     endpoint_retry_burst: int = Field(default=10, ge=1, le=100_000)
-    endpoint_retry_success_refill: int = Field(
-        default=1, ge=1, le=100_000
-    )
-    endpoint_circuit_failure_threshold: int = Field(
-        default=5, ge=1, le=10_000
-    )
-    endpoint_circuit_open_seconds: int = Field(
-        default=60, ge=1, le=86_400
-    )
+    endpoint_retry_success_refill: int = Field(default=1, ge=1, le=100_000)
+    endpoint_circuit_failure_threshold: int = Field(default=5, ge=1, le=10_000)
+    endpoint_circuit_open_seconds: int = Field(default=60, ge=1, le=86_400)
     bulk_replay_max_deliveries: int = Field(default=100, ge=1, le=1_000)
     delivery_retention_days: int = Field(default=30, ge=1, le=3_650)
     delivery_purge_batch_size: int = Field(default=500, ge=1, le=10_000)
@@ -131,6 +123,22 @@ class Settings(BaseSettings):
     api_key_usage_max_entries: int = Field(
         default=10_000, ge=100, le=1_000_000
     )
+
+    observability_enabled: bool = True
+    metrics_path: str = "/metrics"
+    worker_metrics_host: str = "127.0.0.1"
+    worker_metrics_port: int = Field(default=9100, ge=1, le=65_535)
+    observability_collection_seconds: float = Field(
+        default=15.0, ge=1.0, le=300.0
+    )
+    tracing_enabled: bool = True
+    otel_service_name: str = "webhook-platform"
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_exporter_otlp_insecure: bool = False
+    trace_sample_ratio: float = Field(default=0.1, ge=0.0, le=1.0)
+    autoscaling_min_worker_replicas: int = Field(default=1, ge=1, le=1_000)
+    autoscaling_max_worker_replicas: int = Field(default=1, ge=1, le=1_000)
+    nat_connection_budget: int = Field(default=10, ge=1, le=1_000_000)
 
     @model_validator(mode="after")
     def validate_deployment_settings(self) -> "Settings":
@@ -170,9 +178,7 @@ class Settings(BaseSettings):
                 proxy = urlsplit(self.worker_egress_proxy_url)
                 proxy_port = proxy.port
             except ValueError as exc:
-                raise ValueError(
-                    "WORKER_EGRESS_PROXY_URL is invalid"
-                ) from exc
+                raise ValueError("WORKER_EGRESS_PROXY_URL is invalid") from exc
             if (
                 proxy.scheme.lower() != "http"
                 or not proxy.hostname
@@ -204,18 +210,14 @@ class Settings(BaseSettings):
                 "WEBHOOK_RETRY_AFTER_MAX_SECONDS must not exceed the "
                 "maximum delivery age"
             )
-        if (
-            self.endpoint_retry_success_refill
-            > self.endpoint_retry_burst
-        ):
+        if self.endpoint_retry_success_refill > self.endpoint_retry_burst:
             raise ValueError(
                 "ENDPOINT_RETRY_SUCCESS_REFILL exceeds retry burst"
             )
-        total_connections = (
-            self.api_replica_count
-            * (self.api_db_pool_size + self.api_db_max_overflow)
-            + self.worker_replica_count
-            * (self.worker_db_pool_size + self.worker_db_max_overflow)
+        total_connections = self.api_replica_count * (
+            self.api_db_pool_size + self.api_db_max_overflow
+        ) + self.worker_replica_count * (
+            self.worker_db_pool_size + self.worker_db_max_overflow
         )
         if total_connections > self.database_connection_budget:
             raise ValueError(
@@ -233,6 +235,47 @@ class Settings(BaseSettings):
             raise ValueError(
                 "WORKER_GLOBAL_CONCURRENCY exceeds the egress budget"
             )
+        if not self.metrics_path.startswith("/") or "{" in self.metrics_path:
+            raise ValueError("METRICS_PATH must be a fixed absolute path")
+        if (
+            self.autoscaling_min_worker_replicas
+            > self.autoscaling_max_worker_replicas
+        ):
+            raise ValueError("AUTOSCALING_MIN_WORKER_REPLICAS exceeds maximum")
+        remaining_db_connections = self.database_connection_budget - (
+            self.api_replica_count
+            * (self.api_db_pool_size + self.api_db_max_overflow)
+        )
+        safe_worker_replicas = min(
+            max(0, remaining_db_connections)
+            // (self.worker_db_pool_size + self.worker_db_max_overflow),
+            self.worker_egress_connection_budget // self.worker_concurrency,
+            self.nat_connection_budget // self.worker_concurrency,
+        )
+        if self.autoscaling_max_worker_replicas > max(1, safe_worker_replicas):
+            raise ValueError(
+                "AUTOSCALING_MAX_WORKER_REPLICAS exceeds a resource budget"
+            )
+        if self.otel_exporter_otlp_endpoint:
+            otlp = urlsplit(self.otel_exporter_otlp_endpoint)
+            if (
+                otlp.scheme not in {"http", "https"}
+                or not otlp.hostname
+                or otlp.username
+                or otlp.password
+                or otlp.query
+                or otlp.fragment
+            ):
+                raise ValueError(
+                    "OTEL_EXPORTER_OTLP_ENDPOINT must be a credential-free "
+                    "HTTP(S) base URL without query or fragment"
+                )
+            if otlp.scheme == "http" and deployed:
+                raise ValueError("Deployed OTLP endpoints must use TLS")
+            if otlp.scheme == "http" and not self.otel_exporter_otlp_insecure:
+                raise ValueError(
+                    "Set OTEL_EXPORTER_OTLP_INSECURE only for local HTTP"
+                )
         if self.tenant_in_flight_deliveries > self.worker_global_concurrency:
             raise ValueError(
                 "TENANT_IN_FLIGHT_DELIVERIES exceeds global concurrency"
@@ -242,13 +285,9 @@ class Settings(BaseSettings):
                 "ENDPOINT_CONCURRENCY exceeds tenant in-flight limit"
             )
         if self.tenant_fanout_per_event > self.tenant_endpoints_per_project:
-            raise ValueError(
-                "TENANT_FANOUT_PER_EVENT exceeds endpoint limit"
-            )
+            raise ValueError("TENANT_FANOUT_PER_EVENT exceeds endpoint limit")
         if self.tenant_fanout_per_event > self.tenant_delivery_burst:
-            raise ValueError(
-                "TENANT_FANOUT_PER_EVENT exceeds delivery burst"
-            )
+            raise ValueError("TENANT_FANOUT_PER_EVENT exceeds delivery burst")
         if self.tenant_retained_bytes <= self.webhook_payload_max_bytes:
             raise ValueError(
                 "TENANT_RETAINED_BYTES must exceed the payload limit"

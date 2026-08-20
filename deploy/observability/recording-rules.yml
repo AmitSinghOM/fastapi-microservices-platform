@@ -1,0 +1,20 @@
+groups:
+  - name: webhook-platform-recording
+    interval: 15s
+    rules:
+      - record: webhook:queue_oldest_due_age_seconds:max
+        expr: max without(instance, runtime_role) (webhook_queue_oldest_due_age_seconds)
+      - record: webhook:queue_runnable:max
+        expr: max without(instance, runtime_role) (webhook_queue_depth{kind="runnable"})
+      - record: webhook:worker_replicas:ready
+        expr: clamp_min(count(up{job="webhook-worker"} == 1), 1)
+      - record: webhook:queue_runnable_per_worker
+        expr: webhook:queue_runnable:max / webhook:worker_replicas:ready
+      - record: webhook:arrival_rate5m
+        expr: sum(rate(webhook_delivery_lifecycle_total{action="enqueue",outcome="accepted"}[5m]))
+      - record: webhook:completion_rate5m
+        expr: sum(rate(webhook_delivery_lifecycle_total{action="completion"}[5m]))
+      - record: webhook:worker_utilization:max
+        expr: max(webhook_worker_utilization_ratio{runtime_role="worker"})
+      - record: webhook:db_pool_utilization:max
+        expr: max by(runtime_role) (webhook_db_pool_connections{state="checked_out"}) / max by(runtime_role) (webhook_db_pool_connections{state="capacity"})

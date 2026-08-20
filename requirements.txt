@@ -21,3 +21,12 @@ PyJWT==2.10.1
 # Versioned migrations and production PostgreSQL async driver
 alembic==1.14.0
 asyncpg==0.30.0
+
+# Low-cardinality metrics and W3C-compatible distributed tracing.
+prometheus-client==0.26.0
+opentelemetry-api==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-instrumentation-fastapi==0.65b0
+opentelemetry-instrumentation-sqlalchemy==0.65b0
+opentelemetry-instrumentation-httpx==0.65b0

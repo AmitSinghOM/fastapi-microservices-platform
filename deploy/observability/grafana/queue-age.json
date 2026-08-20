@@ -1,0 +1,22 @@
+{
+  "title": "Webhook Queue Age",
+  "uid": "webhook-queue-age",
+  "schemaVersion": 39,
+  "refresh": "15s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Oldest due age",
+      "targets": [{"expr": "webhook:queue_oldest_due_age_seconds:max", "legendFormat": "seconds"}],
+      "fieldConfig": {"defaults": {"unit": "s", "thresholds": {"steps": [{"color": "green"}, {"color": "red", "value": 30}]}}},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Runnable backlog per worker",
+      "targets": [{"expr": "webhook:queue_runnable_per_worker", "legendFormat": "jobs"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    }
+  ]
+}

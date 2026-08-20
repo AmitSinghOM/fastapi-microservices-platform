@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import get_settings
+from app.observability import normalized_route, record_http
 
 RATE_LIMITED_PATHS = ("/auth/login", "/users/")
 _HITS: dict[str, tuple[float, int]] = {}
@@ -34,9 +35,19 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         )
         request.state.request_id = request_id
         started = time.perf_counter()
-
-        response = await call_next(request)
-        elapsed = time.perf_counter() - started
+        response = None
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+        finally:
+            elapsed = time.perf_counter() - started
+            record_http(
+                request.method,
+                normalized_route(request),
+                status_code,
+                elapsed,
+            )
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Process-Time"] = f"{elapsed:.6f}"
         response.headers["X-Content-Type-Options"] = "nosniff"

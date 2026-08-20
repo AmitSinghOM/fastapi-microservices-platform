@@ -1,0 +1,25 @@
+apiVersion: webhook-platform/v1alpha1
+kind: WorkerAutoscalingPolicy
+metadata:
+  name: bounded-worker-scaling
+spec:
+  minReplicas: 1
+  maxReplicas: 1
+  scaleUp:
+    signals:
+      oldestDueAgeSeconds: {target: 15}
+      runnableBacklogPerWorker: {target: 100}
+      arrivalToCompletionRatio: {target: 1.0}
+      workerUtilization: {target: 0.75}
+    selectPolicy: Max
+    stabilizationWindowSeconds: 30
+  scaleDown:
+    stabilizationWindowSeconds: 600
+    maximumReplicaReductionPercent: 25
+  hardBudgets:
+    databaseConnections: 20
+    workerConnectionsPerReplica: 10
+    egressSockets: 10
+    natConnections: 10
+    globalDeliveryConcurrency: 10
+    endpointConcurrency: 10

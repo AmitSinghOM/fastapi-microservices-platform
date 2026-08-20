@@ -29,6 +29,11 @@ from app.models import (
     User,
     WebhookEndpoint,
 )
+from app.observability import (
+    current_trace_headers,
+    record_enqueue,
+    record_event,
+)
 from app.security_observability import (
     SecurityLayer,
     record_security_deny,
@@ -415,6 +420,7 @@ class WebhookService:
                 raise ConflictError(
                     "Idempotency-Key was already used with different content"
                 )
+            record_event("idempotent")
             return existing
         controller = AdmissionController(self.db, self.settings)
         _, tenant_state, now = await controller.lock_global_tenant(
@@ -435,6 +441,7 @@ class WebhookService:
                 raise ConflictError(
                     "Idempotency-Key was already used with different content"
                 )
+            record_event("idempotent")
             return existing
         event_public_id = str(uuid4())
         canonical_envelope = canonical_json(
@@ -460,6 +467,7 @@ class WebhookService:
             len(endpoints),
             len(canonical_envelope),
         )
+        traceparent, tracestate = current_trace_headers()
         event = Event(
             public_id=event_public_id,
             project_id=project_id,
@@ -468,6 +476,8 @@ class WebhookService:
             payload=payload,
             payload_hash=fingerprint,
             canonical_envelope=canonical_envelope,
+            traceparent=traceparent,
+            tracestate=tracestate,
             created_at=now,
         )
         self.db.add(event)
@@ -487,6 +497,7 @@ class WebhookService:
                 and raced.payload_hash == fingerprint
             )
             if raced_matches:
+                record_event("idempotent")
                 return raced
             raise ConflictError(
                 "Idempotency-Key was already used with different content"
@@ -511,6 +522,8 @@ class WebhookService:
             )
         await self.db.commit()
         await self.db.refresh(event)
+        record_event("accepted")
+        record_enqueue(len(endpoints))
         return event
 
     async def list_events(

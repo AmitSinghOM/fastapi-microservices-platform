@@ -1,0 +1,28 @@
+{
+  "title": "Webhook PostgreSQL Health",
+  "uid": "webhook-database-health",
+  "schemaVersion": 39,
+  "refresh": "15s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Application pool utilization",
+      "targets": [{"expr": "webhook:db_pool_utilization:max", "legendFormat": "{{runtime_role}}"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "WAL bytes per second",
+      "targets": [{"expr": "rate(pg_stat_wal_wal_bytes[5m])", "legendFormat": "WAL"}],
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Dead tuples and autovacuum",
+      "targets": [{"expr": "max by(relname) (pg_stat_user_tables_n_dead_tup)", "legendFormat": "{{relname}} dead"}, {"expr": "sum(rate(pg_stat_user_tables_autovacuum_count[30m]))", "legendFormat": "autovacuum"}],
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0}
+    }
+  ]
+}

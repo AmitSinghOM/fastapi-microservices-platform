@@ -277,6 +277,8 @@ class Event(Base):
     payload = Column(JSON, nullable=False)
     payload_hash = Column(String(64), nullable=False)
     canonical_envelope = Column(LargeBinary, nullable=False)
+    traceparent = Column(String(55))
+    tracestate = Column(String(512))
     created_at = Column(DateTime(timezone=True), nullable=False)
 
     project = relationship("Project", overlaps="events")

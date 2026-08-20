@@ -19,6 +19,7 @@ from app.exceptions import (
     UnauthorizedError,
     ValidationError,
 )
+from app.observability import record_event
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,17 @@ async def app_exception_handler(
     exc: AppException,
 ) -> JSONResponse:
     """Map domain exceptions to stable HTTP error contracts."""
-    del request
+    if request.url.path == "/v1/events":
+        if isinstance(exc, QuotaExceededError):
+            record_event("throttled", "tenant_quota")
+        elif isinstance(exc, SaturationError):
+            record_event("throttled", "global_saturation")
+        elif isinstance(exc, ConflictError):
+            record_event("rejected", "conflict")
+        elif isinstance(exc, UnauthorizedError):
+            record_event("rejected", "authentication")
+        else:
+            record_event("rejected", "domain")
     status_map = {
         NotFoundError: status.HTTP_404_NOT_FOUND,
         AlreadyExistsError: status.HTTP_409_CONFLICT,
@@ -87,7 +98,8 @@ async def validation_exception_handler(
     exc: RequestValidationError,
 ) -> JSONResponse:
     """Return field-focused Pydantic validation failures."""
-    del request
+    if request.url.path == "/v1/events":
+        record_event("rejected", "validation")
     errors = [
         {
             "field": ".".join(str(location) for location in error["loc"]),

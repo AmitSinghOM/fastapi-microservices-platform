@@ -206,6 +206,23 @@ independent DNS and network policy. See
 [the Phase 3 boundary](docs/phase3-egress-boundary.md) for the deny corpus and
 validation procedure.
 
+## Observability and bounded autoscaling
+
+The API exports Prometheus text at `/metrics`; the worker exposes the same
+fixed-label registry on its private `WORKER_METRICS_HOST` and
+`WORKER_METRICS_PORT`. Configure `OTEL_EXPORTER_OTLP_ENDPOINT` to export sampled
+OTLP/HTTP traces. W3C trace context is stored with accepted events and resumed
+by workers, while payloads, URLs, credentials, SQL, response bodies, and
+identifiers never become metric labels.
+
+Prometheus scrape/recording/alert rules, four Grafana dashboards, the read-only
+PostgreSQL monitoring role, and the bounded worker scaling policy are under
+`deploy/observability`. Scale recommendations combine due age, runnable backlog
+per worker, arrival/completion rates, and worker utilization; configured maximum
+replicas must fit remaining database, egress, and NAT budgets. See
+[the Phase 6 contract](docs/phase6-observability-autoscaling.md) for metric
+semantics, SLOs, and reproducible 10× burst evidence.
+
 ## Migrations, operations, and compatibility
 
 Apply schema changes before API rollout:
@@ -220,7 +237,8 @@ backfills canonical event envelopes and endpoint snapshots; historical endpoint
 state can only reflect what is visible during that upgrade. Revision `0004`
 backfills delivery organization ownership and initializes global, tenant, and
 endpoint admission state. Revision `0005` backfills dead-letter reasons and
-endpoint retry/circuit state, and creates replay audit records. Set
+endpoint retry/circuit state, and creates replay audit records. Revision
+`0006` adds bounded W3C trace context to accepted events. Set
 `AUTO_CREATE_SCHEMA=false` in staging/production;
 those environments reject local schema auto-creation and require all three
 secrets at 32+ characters. Configuration includes multiplied replica/database

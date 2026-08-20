@@ -7,9 +7,17 @@ import logging
 import signal
 
 import httpx
+from prometheus_client import start_http_server
 
 from app.config import Settings, get_settings
 from app.db import create_database_resources
+from app.observability import (
+    REGISTRY,
+    QueueMetricsCollector,
+    configure_tracing,
+    flush_tracing,
+    set_worker_in_flight,
+)
 from app.services.delivery_service import ClaimedDelivery, DeliveryService
 
 logger = logging.getLogger(__name__)
@@ -41,6 +49,7 @@ async def run_delivery_loop(
     in_flight: set[asyncio.Task[None]] = set()
     while not stop.is_set():
         in_flight = {task for task in in_flight if not task.done()}
+        set_worker_in_flight(len(in_flight), settings.worker_concurrency)
         available = settings.worker_concurrency - len(in_flight)
         if available > 0:
             claims = await service.claim_due(
@@ -53,6 +62,7 @@ async def run_delivery_loop(
                 break
             for claim in claims:
                 in_flight.add(asyncio.create_task(_run_claim(service, claim)))
+            set_worker_in_flight(len(in_flight), settings.worker_concurrency)
             if claims:
                 continue
         if in_flight:
@@ -78,6 +88,7 @@ async def run_delivery_loop(
     for task in pending:
         task.cancel()
     await asyncio.gather(*in_flight, return_exceptions=True)
+    set_worker_in_flight(0, settings.worker_concurrency)
 
 
 def create_http_client(settings: Settings) -> httpx.AsyncClient:
@@ -90,7 +101,7 @@ def create_http_client(settings: Settings) -> httpx.AsyncClient:
     )
     limits = httpx.Limits(
         max_connections=settings.worker_concurrency,
-        # A fresh CONNECT tunnel forces proxy DNS/policy evaluation per attempt.
+        # Fresh tunnels force proxy DNS/policy checks on every attempt.
         max_keepalive_connections=0,
     )
     return httpx.AsyncClient(
@@ -104,6 +115,7 @@ def create_http_client(settings: Settings) -> httpx.AsyncClient:
 
 async def run_worker() -> None:
     settings = get_settings()
+    configure_tracing(settings, "worker")
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     installed_signals: list[signal.Signals] = []
@@ -115,17 +127,42 @@ async def run_worker() -> None:
             pass
 
     database = create_database_resources(settings, "worker")
+    collector = QueueMetricsCollector(
+        database.session_factory,
+        settings.observability_collection_seconds,
+        "worker",
+    )
+    metrics_server = None
+    metrics_thread = None
+    if settings.observability_enabled:
+        metrics_server, metrics_thread = start_http_server(
+            settings.worker_metrics_port,
+            addr=settings.worker_metrics_host,
+            registry=REGISTRY,
+        )
+        await collector.start()
     try:
         async with create_http_client(settings) as client:
             service = DeliveryService(
-                database.session_factory, client, settings
+                database.session_factory,
+                client,
+                settings,
+                engine=database.engine,
             )
             logger.info("Webhook worker started")
             await run_delivery_loop(service, settings, stop)
     finally:
         for signal_name in installed_signals:
             loop.remove_signal_handler(signal_name)
+        if settings.observability_enabled:
+            await collector.stop()
         await database.close()
+        if metrics_server is not None:
+            metrics_server.shutdown()
+            metrics_server.server_close()
+        if metrics_thread is not None:
+            metrics_thread.join(timeout=5)
+        flush_tracing()
     logger.info("Webhook worker stopped")
 
 

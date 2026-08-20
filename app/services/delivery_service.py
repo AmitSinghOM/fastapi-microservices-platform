@@ -1,17 +1,31 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import httpx
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+)
 
 from app.config import Settings
 from app.models import Delivery, DeliveryAttempt, EndpointQuotaState
+from app.observability import (
+    delivery_span,
+    record_circuit_transition,
+    record_claim,
+    record_finalization,
+    record_lease,
+    record_stale_finalization,
+    observe_pool_acquisition,
+)
 from app.retry_policy import (
     aware,
     is_retryable_status,
@@ -65,6 +79,8 @@ class ClaimedDelivery:
     event_public_id: str
     event_type: str
     canonical_envelope: bytes
+    traceparent: str | None = None
+    tracestate: str | None = None
     created_at: datetime = field(default_factory=utcnow)
 
 
@@ -86,22 +102,53 @@ class DeliveryService:
         session_factory: async_sessionmaker[AsyncSession],
         client: httpx.AsyncClient,
         settings: Settings,
+        engine: AsyncEngine | None = None,
     ):
         self.session_factory = session_factory
         self.client = client
         self.settings = settings
+        self.engine = engine
+
+    @asynccontextmanager
+    async def _session(self) -> AsyncIterator[AsyncSession]:
+        if self.engine is None:
+            async with self.session_factory() as session:
+                yield session
+            return
+        started = asyncio.get_running_loop().time()
+        acquired = False
+        try:
+            async with self.engine.connect() as connection:
+                acquired = True
+                observe_pool_acquisition(
+                    asyncio.get_running_loop().time() - started
+                )
+                async with AsyncSession(
+                    bind=connection, expire_on_commit=False
+                ) as session:
+                    yield session
+        except Exception:
+            if not acquired:
+                observe_pool_acquisition(
+                    asyncio.get_running_loop().time() - started,
+                    "error",
+                )
+            raise
 
     async def claim_due(self, limit: int) -> list[ClaimedDelivery]:
         if limit <= 0:
             return []
         claims: list[ClaimedDelivery] = []
-        async with self.session_factory() as session:
+        reclaimed = 0
+        async with self._session() as session:
             async with session.begin():
                 now = await database_now(session)
                 deliveries = await select_fair_deliveries(
                     session, self.settings, now, limit
                 )
                 for delivery in deliveries:
+                    if delivery.status == "processing":
+                        reclaimed += 1
                     token = str(uuid4())
                     delivery.status = "processing"
                     delivery.attempt_count += 1
@@ -133,13 +180,16 @@ class DeliveryService:
                             canonical_envelope=bytes(
                                 delivery.event.canonical_envelope
                             ),
+                            traceparent=delivery.event.traceparent,
+                            tracestate=delivery.event.tracestate,
                             created_at=delivery.created_at,
                         )
                     )
+        record_claim(len(claims), reclaimed)
         return claims
 
     async def renew_lease(self, claim: ClaimedDelivery) -> bool:
-        async with self.session_factory() as session:
+        async with self._session() as session:
             async with session.begin():
                 now = await database_now(session)
                 delivery = await session.scalar(
@@ -153,16 +203,18 @@ class DeliveryService:
                     .with_for_update()
                 )
                 if delivery is None:
+                    record_lease("lost")
                     return False
                 delivery.lease_expires_at = now + timedelta(
                     seconds=self.settings.worker_lease_seconds
                 )
                 delivery.updated_at = now
+        record_lease("renewed")
         return True
 
     async def release_claim(self, claim: ClaimedDelivery) -> bool:
         """Make canceled work immediately reclaimable during shutdown."""
-        async with self.session_factory() as session:
+        async with self._session() as session:
             async with session.begin():
                 now = await database_now(session)
                 delivery = await session.scalar(
@@ -175,12 +227,14 @@ class DeliveryService:
                     .with_for_update()
                 )
                 if delivery is None:
+                    record_lease("release_stale")
                     return False
                 delivery.status = "retry_scheduled"
                 delivery.next_attempt_at = now
                 delivery.lease_token = None
                 delivery.lease_expires_at = None
                 delivery.updated_at = now
+        record_lease("released")
         return True
 
     async def _heartbeat(
@@ -293,6 +347,14 @@ class DeliveryService:
         )
 
     async def deliver(self, claim: ClaimedDelivery) -> bool:
+        with delivery_span(claim) as span:
+            finalized = await self._deliver_with_heartbeat(claim)
+            span.set_attribute("webhook.finalized", finalized)
+            return finalized
+
+    async def _deliver_with_heartbeat(
+        self, claim: ClaimedDelivery
+    ) -> bool:
         started = utcnow()
         heartbeat_stop = asyncio.Event()
         attempt_task = asyncio.create_task(self._perform_attempt(claim))
@@ -343,7 +405,7 @@ class DeliveryService:
         response_body: str | None,
         retry_after_seconds: float | None = None,
     ) -> bool:
-        async with self.session_factory() as session:
+        async with self._session() as session:
             async with session.begin():
                 finished = await database_now(session)
                 delivery = await session.scalar(
@@ -357,6 +419,7 @@ class DeliveryService:
                     .with_for_update()
                 )
                 if delivery is None:
+                    record_stale_finalization()
                     return False
                 endpoint_state = await session.scalar(
                     select(EndpointQuotaState)
@@ -369,6 +432,7 @@ class DeliveryService:
                 if endpoint_state is None:
                     raise RuntimeError("Endpoint retry state is unavailable")
 
+                previous_circuit_state = endpoint_state.circuit_state
                 is_probe = (
                     endpoint_state.half_open_probe_delivery_id == delivery.id
                 )
@@ -410,6 +474,11 @@ class DeliveryService:
                     endpoint_state.circuit_open_until = None
                     endpoint_state.half_open_probe_delivery_id = None
                 endpoint_state.updated_at = finished
+                circuit_transition = (
+                    endpoint_state.circuit_state
+                    if endpoint_state.circuit_state != previous_circuit_state
+                    else None
+                )
 
                 delivery_deadline = aware(delivery.created_at) + timedelta(
                     seconds=self.settings.webhook_max_delivery_age_seconds
@@ -484,4 +553,20 @@ class DeliveryService:
                         response_body=response_body,
                     )
                 )
+                attempt_seconds = (
+                    aware(finished) - aware(started)
+                ).total_seconds()
+                end_to_end_seconds = (
+                    aware(finished) - aware(delivery.created_at)
+                ).total_seconds()
+        if circuit_transition is not None:
+            record_circuit_transition(circuit_transition)
+        record_finalization(
+            outcome,
+            attempt_seconds,
+            end_to_end_seconds,
+            claim.attempt_number,
+            status_code,
+            error,
+        )
         return True

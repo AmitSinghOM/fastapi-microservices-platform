@@ -76,6 +76,7 @@ services:
       <<: *app-environment
       # Explicit client configuration; HTTP(S)_PROXY and NO_PROXY are ignored.
       WORKER_EGRESS_PROXY_URL: http://egress-proxy:3128
+      WORKER_METRICS_HOST: 0.0.0.0
     depends_on:
       api:
         condition: service_healthy
