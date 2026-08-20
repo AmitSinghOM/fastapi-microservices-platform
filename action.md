@@ -235,19 +235,37 @@ changes are reviewed and any required remote gate is explicitly authorized.
 
 **Purpose:** recover predictably without generating retry storms.
 
-- [ ] Retry network failures, timeouts, HTTP 408, 425, 429, and 5xx responses.
-- [ ] Treat ordinary non-retryable 4xx responses as terminal.
-- [ ] Honor valid `Retry-After` values within a configured maximum.
-- [ ] Retain capped exponential backoff with full jitter.
-- [ ] Add maximum delivery age in addition to maximum attempts.
-- [ ] Add endpoint-scoped retry token buckets and circuit breakers.
-- [ ] Define half-open probes and automatic/manual endpoint recovery.
-- [ ] Build operational dead-letter queries by tenant, endpoint, reason, and age.
-- [ ] Add audited single and bulk replay with rate limits and idempotency.
-- [ ] Add pause, cancel, export, retention, and purge operations.
+- [x] Retry network failures, timeouts, HTTP 408, 425, 429, and 5xx responses.
+- [x] Treat ordinary non-retryable 4xx responses as terminal.
+- [x] Honor valid `Retry-After` values within a configured maximum.
+- [x] Retain capped exponential backoff with full jitter.
+- [x] Add maximum delivery age in addition to maximum attempts.
+- [x] Add endpoint-scoped retry token buckets and circuit breakers.
+- [x] Define half-open probes and automatic/manual endpoint recovery.
+- [x] Build operational dead-letter queries by tenant, endpoint, reason, and age.
+- [x] Add audited single and bulk replay with rate limits and idempotency.
+- [x] Add pause, cancel, export, retention, and purge operations.
 
-**Completion gate:** a sustained destination outage remains inside its retry and
-concurrency budget and cannot consume the worker fleet.
+**Phase 5 evidence (2026-08-20):** `docs/phase5-retry-dlq.md` defines transient
+classification, bounded `Retry-After`, full-jitter backoff, attempt/age limits,
+shared retry tokens, circuit transitions, dead-letter operations, audited replay,
+and destructive-operation safeguards. Focused tests prove maximum-age work sends
+no HTTP, non-retryable statuses terminate, valid delta/date retry hints are
+clamped, and successful half-open probes recover automatically. API tests prove
+dead filtering/export, atomic replay audit/idempotency, pause/resume/manual
+recovery, race-safe cancel, owner-only dry-run purge, and bounded retention.
+Live PostgreSQL races prove ten due endpoint retries with burst two yield exactly
+two claims across workers, while an elapsed open circuit yields exactly one
+half-open probe. A populated `0004` database upgraded to `0005`, backfilled
+legacy dead and endpoint state, downgraded, re-upgraded, and passed `alembic
+check`. Diagnostics, Ruff, mypy over 13 sources, compilation, 108 fast tests,
+and the complete 118-test SQLite/PostgreSQL suite passed. The existing Passlib
+`crypt` deprecation warning remains unchanged.
+
+**Completion gate: passed on 2026-08-20.** A controlled sustained-outage queue
+remained inside the shared endpoint retry and concurrency budgets and could not
+consume additional worker slots after circuit opening. Phase 6 must not be
+marked complete until its independent observability and burst evidence exists.
 
 ## Phase 6 — Observability and autoscaling
 

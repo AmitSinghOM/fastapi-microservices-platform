@@ -102,9 +102,12 @@ and compare with a constant-time function before parsing JSON.
 ## Retries and worker safety
 
 Only network/timeouts and HTTP `408`, `425`, `429`, and `5xx` retry. Other HTTP
-statuses are terminal. Delay uses capped exponential backoff with full jitter;
-max attempts transitions to `dead`. Claims use row locking with skip-locked,
-database-time leases, token-guarded heartbeats, and expiry-guarded finalization.
+statuses are terminal. Valid delta-seconds and HTTP-date `Retry-After` values are
+clamped to a configured maximum and combined with capped exponential backoff
+using full jitter. Maximum attempts and maximum delivery age independently
+bound work; terminal deliveries retain a fixed dead reason. Claims use row
+locking with skip-locked, database-time leases, token-guarded heartbeats, and
+expiry-guarded finalization.
 Workers never claim more rows than free execution slots. Every attempt has an
 overall deadline in addition to HTTP phase timeouts; HTTP is never inside a
 database transaction. On SIGINT/SIGTERM the worker stops claiming, drains work
@@ -117,6 +120,13 @@ acceptance. Later endpoint edits or JSON re-serialization cannot alter accepted
 work or signatures. Replay deliberately copies the original snapshot. Delivery
 attempts remain insert-only in application behavior and uniquely numbered per
 delivery; crash windows may leave intentional numbering gaps.
+
+Retries consume a PostgreSQL-backed endpoint token bucket; original attempts do
+not, so retry suppression never prevents the first delivery attempt. Repeated
+transient failures open an endpoint circuit. Open endpoints dispatch no work,
+an elapsed circuit permits exactly one half-open probe across all workers, and
+a successful probe closes the circuit. Operators can independently pause/resume
+an endpoint or manually recover its circuit.
 
 The client has explicit connect/read/write/pool timeouts, pins the configured
 HTTP CONNECT proxy, ignores proxy environment variables (including `NO_PROXY`),
@@ -152,6 +162,25 @@ concurrency exceeds total process slots or `WORKER_EGRESS_CONNECTION_BUDGET`,
 or where endpoint/tenant/global concurrency limits are inconsistent. See
 [the Phase 4 contract](docs/phase4-admission-fairness.md) for formulas, quota
 semantics, and PostgreSQL race/fairness evidence.
+
+## Dead-letter and replay operations
+
+Dead deliveries can be filtered by endpoint, fixed reason, and minimum age, or
+exported as bounded CSV without payloads, secrets, destination URLs, or response
+bodies. The `/v1/projects/{project_id}/replays` API accepts a bounded list of
+dead delivery IDs plus `Idempotency-Key`; replay admission, immutable snapshot
+copies, and an actor-attributed audit record commit atomically. Repeating the
+same key and source list returns the original operation, while changing the list
+returns a conflict. The compatibility single-delivery replay route remains
+available and is also audited.
+
+Pending and retry-scheduled deliveries can be canceled without racing an active
+lease. Endpoint pause/resume affects dispatch but not accepted immutable
+snapshots. Owner-only retention purge defaults to dry-run, deletes only bounded
+batches of terminal deliveries older than `DELIVERY_RETENTION_DAYS`, and relies
+on database cascades for attempt cleanup. See
+[the Phase 5 contract](docs/phase5-retry-dlq.md) for state transitions and
+operational safeguards.
 
 ## SSRF and production egress boundary
 
@@ -190,7 +219,9 @@ alembic downgrade base  # destructive; development rollback only
 backfills canonical event envelopes and endpoint snapshots; historical endpoint
 state can only reflect what is visible during that upgrade. Revision `0004`
 backfills delivery organization ownership and initializes global, tenant, and
-endpoint admission state. Set `AUTO_CREATE_SCHEMA=false` in staging/production;
+endpoint admission state. Revision `0005` backfills dead-letter reasons and
+endpoint retry/circuit state, and creates replay audit records. Set
+`AUTO_CREATE_SCHEMA=false` in staging/production;
 those environments reject local schema auto-creation and require all three
 secrets at 32+ characters. Configuration includes multiplied replica/database
 connection budgets, shared admission and worker concurrency limits, an explicit

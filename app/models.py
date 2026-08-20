@@ -187,6 +187,16 @@ class TenantQuotaState(Base):
 
 class EndpointQuotaState(Base):
     __tablename__ = "endpoint_quota_state"
+    __table_args__ = (
+        CheckConstraint(
+            "circuit_state IN ('closed', 'open', 'half_open')",
+            name="ck_endpoint_quota_circuit_state",
+        ),
+        CheckConstraint(
+            "consecutive_failures >= 0",
+            name="ck_endpoint_quota_failures_nonnegative",
+        ),
+    )
 
     endpoint_id = Column(
         Integer,
@@ -195,6 +205,18 @@ class EndpointQuotaState(Base):
     )
     delivery_tokens = Column(Float, nullable=False)
     refilled_at = Column(DateTime(timezone=True), nullable=False)
+    retry_tokens = Column(Float, nullable=False)
+    retry_refilled_at = Column(DateTime(timezone=True), nullable=False)
+    circuit_state = Column(String(16), nullable=False)
+    consecutive_failures = Column(Integer, nullable=False)
+    circuit_open_until = Column(DateTime(timezone=True), nullable=True)
+    half_open_probe_delivery_id = Column(
+        Integer,
+        ForeignKey("deliveries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    paused_at = Column(DateTime(timezone=True), nullable=True)
+    pause_reason = Column(String(200), nullable=True)
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
     endpoint = relationship("WebhookEndpoint", overlaps="quota_state")
@@ -266,7 +288,7 @@ class Delivery(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('pending', 'processing', 'retry_scheduled', "
-            "'succeeded', 'dead')",
+            "'succeeded', 'dead', 'canceled')",
             name="ck_deliveries_status",
         ),
         CheckConstraint(
@@ -284,6 +306,20 @@ class Delivery(Base):
         ),
         Index("ix_deliveries_event", "event_id", "created_at"),
         Index("ix_deliveries_endpoint", "endpoint_id", "created_at"),
+        Index(
+            "ix_deliveries_dead_operations",
+            "organization_id",
+            "status",
+            "dead_at",
+            "id",
+        ),
+        Index(
+            "ix_deliveries_endpoint_dead",
+            "endpoint_id",
+            "status",
+            "dead_at",
+            "id",
+        ),
         Index(
             "ix_deliveries_fair_due",
             "organization_id",
@@ -328,11 +364,61 @@ class Delivery(Base):
     created_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)
     succeeded_at = Column(DateTime(timezone=True), nullable=True)
+    dead_at = Column(DateTime(timezone=True), nullable=True)
+    dead_reason = Column(String(64), nullable=True)
+    canceled_at = Column(DateTime(timezone=True), nullable=True)
+    canceled_reason = Column(String(200), nullable=True)
 
     event = relationship("Event", overlaps="deliveries")
     endpoint = relationship("WebhookEndpoint", overlaps="deliveries")
     replay_of = relationship("Delivery", remote_side=[id])
     attempts = relationship("DeliveryAttempt", cascade="all, delete-orphan")
+
+
+class ReplayOperation(Base):
+    __tablename__ = "replay_operations"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "idempotency_key",
+            name="uq_replay_operations_project_key",
+        ),
+        CheckConstraint(
+            "mode IN ('single', 'bulk')",
+            name="ck_replay_operations_mode",
+        ),
+        Index(
+            "ix_replay_operations_org_created",
+            "organization_id",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    public_id = Column(String(36), unique=True, index=True, nullable=False)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    actor_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    idempotency_key = Column(String(255), nullable=False)
+    mode = Column(String(16), nullable=False)
+    requested_count = Column(Integer, nullable=False)
+    created_count = Column(Integer, nullable=False)
+    source_delivery_ids = Column(JSON, nullable=False)
+    created_delivery_ids = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
 
 
 class DeliveryAttempt(Base):

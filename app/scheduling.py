@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.admission import (
+    aware,
     consume_tokens,
     ensure_endpoint_state,
     ensure_global_state,
@@ -207,6 +208,7 @@ async def select_fair_deliveries(
     }
 
     endpoint_balances = {}
+    endpoint_retry_balances = {}
     for endpoint_id, endpoint_state in endpoint_state_by_id.items():
         balance = consume_tokens(
             endpoint_state.delivery_tokens,
@@ -217,10 +219,22 @@ async def select_fair_deliveries(
             now,
             settings.quota_retry_after_max_seconds,
         )
+        retry_balance = consume_tokens(
+            endpoint_state.retry_tokens,
+            endpoint_state.retry_refilled_at,
+            settings.endpoint_retry_rate_per_second,
+            settings.endpoint_retry_burst,
+            0,
+            now,
+            settings.quota_retry_after_max_seconds,
+        )
         endpoint_state.delivery_tokens = balance.tokens
         endpoint_state.refilled_at = balance.refilled_at
+        endpoint_state.retry_tokens = retry_balance.tokens
+        endpoint_state.retry_refilled_at = retry_balance.refilled_at
         endpoint_state.updated_at = now
         endpoint_balances[endpoint_id] = balance.tokens
+        endpoint_retry_balances[endpoint_id] = retry_balance.tokens
 
     grouped: dict[int, dict[int, deque[Delivery]]] = defaultdict(
         lambda: defaultdict(deque)
@@ -261,6 +275,24 @@ async def select_fair_deliveries(
                 queue = grouped[organization_id][endpoint_id]
                 if not queue:
                     continue
+                endpoint_state = endpoint_state_by_id[endpoint_id]
+                if endpoint_state.paused_at is not None:
+                    continue
+                if endpoint_state.circuit_state == "open":
+                    if (
+                        endpoint_state.circuit_open_until is None
+                        or aware(endpoint_state.circuit_open_until) > now
+                    ):
+                        continue
+                    endpoint_state.circuit_state = "half_open"
+                    endpoint_state.circuit_open_until = None
+                    endpoint_state.half_open_probe_delivery_id = None
+                delivery = queue[0]
+                if endpoint_state.circuit_state == "half_open" and (
+                    endpoint_state.half_open_probe_delivery_id
+                    not in (None, delivery.id)
+                ):
+                    continue
                 if (
                     int(endpoint_counts.get(endpoint_id, 0))
                     >= settings.endpoint_concurrency
@@ -268,9 +300,19 @@ async def select_fair_deliveries(
                     continue
                 if endpoint_balances[endpoint_id] < 1.0:
                     continue
+                is_retry = delivery.attempt_count > 0
+                if is_retry and endpoint_retry_balances[endpoint_id] < 1.0:
+                    continue
                 delivery = queue.popleft()
                 selected.append(delivery)
                 endpoint_balances[endpoint_id] -= 1.0
+                if is_retry:
+                    endpoint_retry_balances[endpoint_id] -= 1.0
+                    endpoint_state.retry_tokens = (
+                        endpoint_retry_balances[endpoint_id]
+                    )
+                if endpoint_state.circuit_state == "half_open":
+                    endpoint_state.half_open_probe_delivery_id = delivery.id
                 endpoint_counts[endpoint_id] = (
                     int(endpoint_counts.get(endpoint_id, 0)) + 1
                 )

@@ -105,6 +105,28 @@ class Settings(BaseSettings):
     webhook_max_attempts: int = Field(default=8, ge=1, le=50)
     webhook_backoff_base_seconds: float = Field(default=1.0, gt=0, le=3600)
     webhook_backoff_cap_seconds: float = Field(default=3600.0, gt=0, le=86_400)
+    webhook_retry_after_max_seconds: int = Field(
+        default=3_600, ge=1, le=86_400
+    )
+    webhook_max_delivery_age_seconds: int = Field(
+        default=86_400, ge=60, le=2_592_000
+    )
+    endpoint_retry_rate_per_second: float = Field(
+        default=0.1, gt=0, le=10_000
+    )
+    endpoint_retry_burst: int = Field(default=10, ge=1, le=100_000)
+    endpoint_retry_success_refill: int = Field(
+        default=1, ge=1, le=100_000
+    )
+    endpoint_circuit_failure_threshold: int = Field(
+        default=5, ge=1, le=10_000
+    )
+    endpoint_circuit_open_seconds: int = Field(
+        default=60, ge=1, le=86_400
+    )
+    bulk_replay_max_deliveries: int = Field(default=100, ge=1, le=1_000)
+    delivery_retention_days: int = Field(default=30, ge=1, le=3_650)
+    delivery_purge_batch_size: int = Field(default=500, ge=1, le=10_000)
     api_key_usage_flush_seconds: float = Field(default=30.0, gt=0, le=600)
     api_key_usage_max_entries: int = Field(
         default=10_000, ge=100, le=1_000_000
@@ -173,6 +195,21 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "WEBHOOK_BACKOFF_CAP_SECONDS must be at least the base"
+            )
+        if (
+            self.webhook_retry_after_max_seconds
+            > self.webhook_max_delivery_age_seconds
+        ):
+            raise ValueError(
+                "WEBHOOK_RETRY_AFTER_MAX_SECONDS must not exceed the "
+                "maximum delivery age"
+            )
+        if (
+            self.endpoint_retry_success_refill
+            > self.endpoint_retry_burst
+        ):
+            raise ValueError(
+                "ENDPOINT_RETRY_SUCCESS_REFILL exceeds retry burst"
             )
         total_connections = (
             self.api_replica_count

@@ -11,6 +11,7 @@ python_version = "3.11"
 files = [
   "app/admission.py",
   "app/config.py",
+  "app/retry_policy.py",
   "app/scheduling.py",
   "app/security_observability.py",
   "app/schemas",

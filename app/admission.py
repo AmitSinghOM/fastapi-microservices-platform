@@ -69,6 +69,14 @@ def endpoint_quota_values(
         "endpoint_id": endpoint_id,
         "delivery_tokens": float(settings.endpoint_rate_burst),
         "refilled_at": now,
+        "retry_tokens": float(settings.endpoint_retry_burst),
+        "retry_refilled_at": now,
+        "circuit_state": "closed",
+        "consecutive_failures": 0,
+        "circuit_open_until": None,
+        "half_open_probe_delivery_id": None,
+        "paused_at": None,
+        "pause_reason": None,
         "updated_at": now,
     }
 
@@ -333,18 +341,37 @@ class AdmissionController:
         state.updated_at = now
 
     async def admit_replay(self, organization_id: int) -> datetime:
+        return await self.admit_replays(organization_id, 1)
+
+    async def admit_replays(
+        self, organization_id: int, count: int
+    ) -> datetime:
         _, state, now = await self.lock_global_tenant(organization_id)
-        await self.check_saturation(now, 1)
+        await self.admit_replays_locked(state, now, count)
+        return now
+
+    async def admit_replays_locked(
+        self,
+        state: TenantQuotaState,
+        now: datetime,
+        count: int,
+    ) -> None:
+        if count < 1 or count > self.settings.bulk_replay_max_deliveries:
+            raise QuotaExceededError(
+                "bulk_replay_size",
+                self.settings.quota_retry_after_max_seconds,
+            )
+        await self.check_saturation(now, count)
         replay_balance = consume_tokens(
             state.replay_tokens,
             state.replay_refilled_at,
             self.settings.tenant_replay_rate_per_second,
             self.settings.tenant_replay_burst,
-            1,
+            count,
             now,
             self.settings.quota_retry_after_max_seconds,
         )
-        delivery_balance = self._delivery_balance(state, 1, now)
+        delivery_balance = self._delivery_balance(state, count, now)
         if replay_balance.retry_after is not None:
             raise QuotaExceededError(
                 "replay_rate", replay_balance.retry_after
@@ -358,7 +385,6 @@ class AdmissionController:
         state.delivery_tokens = delivery_balance.tokens
         state.delivery_refilled_at = delivery_balance.refilled_at
         state.updated_at = now
-        return now
 
     async def check_endpoint_limit(
         self,

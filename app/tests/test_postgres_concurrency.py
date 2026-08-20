@@ -8,10 +8,12 @@ import pytest
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.admission import endpoint_quota_values
 from app.exceptions import QuotaExceededError
 from app.models import (
     Delivery,
     DeliveryAttempt,
+    EndpointQuotaState,
     Event,
     GlobalControlState,
     Organization,
@@ -432,3 +434,89 @@ async def test_noisy_tenant_keeps_healthy_age_within_twice_baseline(
     assert healthy_position <= 2
     assert healthy_age is not None
     assert healthy_age <= baseline_age * 2
+
+
+@pytest.mark.asyncio
+async def test_competing_workers_allow_one_half_open_probe(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+):
+    _, endpoint_ids, _ = await seed_tenant_queue(
+        postgres_session_factory, "half-open", [2]
+    )
+    endpoint_id = endpoint_ids[0]
+    settings = worker_settings().model_copy(
+        update={
+            "worker_global_concurrency": 2,
+            "tenant_in_flight_deliveries": 2,
+            "endpoint_concurrency": 2,
+            "endpoint_retry_burst": 10,
+        }
+    )
+    now = datetime.now(timezone.utc)
+    async with postgres_session_factory() as session:
+        async with session.begin():
+            state = EndpointQuotaState(
+                **endpoint_quota_values(endpoint_id, settings, now)
+            )
+            state.circuit_state = "open"
+            state.circuit_open_until = now - timedelta(seconds=1)
+            session.add(state)
+
+    async with httpx.AsyncClient() as client:
+        workers = [
+            DeliveryService(postgres_session_factory, client, settings)
+            for _ in range(2)
+        ]
+        batches = await asyncio.gather(
+            *(worker.claim_due(2) for worker in workers)
+        )
+    claims = [claim for batch in batches for claim in batch]
+    assert len(claims) == 1
+    async with postgres_session_factory() as session:
+        state = await session.get(EndpointQuotaState, endpoint_id)
+        assert state is not None
+        assert state.circuit_state == "half_open"
+        assert state.half_open_probe_delivery_id == claims[0].id
+
+
+@pytest.mark.asyncio
+async def test_outage_retries_share_endpoint_retry_budget(
+    postgres_session_factory: async_sessionmaker[AsyncSession],
+):
+    _, endpoint_ids, _ = await seed_tenant_queue(
+        postgres_session_factory, "retry-budget", [10]
+    )
+    endpoint_id = endpoint_ids[0]
+    settings = worker_settings().model_copy(
+        update={
+            "worker_global_concurrency": 10,
+            "tenant_in_flight_deliveries": 10,
+            "endpoint_concurrency": 10,
+            "endpoint_retry_burst": 2,
+            "endpoint_retry_rate_per_second": 0.001,
+        }
+    )
+    now = datetime.now(timezone.utc)
+    async with postgres_session_factory() as session:
+        async with session.begin():
+            deliveries = list(await session.scalars(select(Delivery)))
+            for delivery in deliveries:
+                delivery.status = "retry_scheduled"
+                delivery.attempt_count = 1
+            session.add(
+                EndpointQuotaState(
+                    **endpoint_quota_values(endpoint_id, settings, now)
+                )
+            )
+
+    async with httpx.AsyncClient() as client:
+        workers = [
+            DeliveryService(postgres_session_factory, client, settings)
+            for _ in range(2)
+        ]
+        batches = await asyncio.gather(
+            *(worker.claim_due(10) for worker in workers)
+        )
+    claims = [claim for batch in batches for claim in batch]
+    assert len(claims) == 2
+    assert {claim.endpoint_id for claim in claims} == {endpoint_id}

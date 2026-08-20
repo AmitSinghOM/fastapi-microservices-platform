@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import random
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -12,7 +11,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
-from app.models import Delivery, DeliveryAttempt
+from app.models import Delivery, DeliveryAttempt, EndpointQuotaState
+from app.retry_policy import (
+    aware,
+    is_retryable_status,
+    jittered_backoff,
+    parse_retry_after,
+)
 from app.scheduling import select_fair_deliveries
 from app.security_observability import (
     SecurityDenyReason,
@@ -60,6 +65,7 @@ class ClaimedDelivery:
     event_public_id: str
     event_type: str
     canonical_envelope: bytes
+    created_at: datetime = field(default_factory=utcnow)
 
 
 @dataclass(frozen=True)
@@ -69,6 +75,7 @@ class AttemptResult:
     status_code: int | None
     error: str | None
     response_body: str | None
+    retry_after_seconds: float | None = None
 
 
 class DeliveryService:
@@ -126,6 +133,7 @@ class DeliveryService:
                             canonical_envelope=bytes(
                                 delivery.event.canonical_envelope
                             ),
+                            created_at=delivery.created_at,
                         )
                     )
         return claims
@@ -194,7 +202,11 @@ class DeliveryService:
         status_code: int | None = None
         error: str | None = None
         response_body: str | None = None
-        if not claim.endpoint_active:
+        retry_after_seconds: float | None = None
+        age = (utcnow() - aware(claim.created_at)).total_seconds()
+        if age >= self.settings.webhook_max_delivery_age_seconds:
+            error = "max_delivery_age"
+        elif not claim.endpoint_active:
             error = "endpoint_inactive_at_acceptance"
         else:
             try:
@@ -228,6 +240,11 @@ class DeliveryService:
                         },
                     ) as response:
                         status_code = response.status_code
+                        retry_after_seconds = parse_retry_after(
+                            response.headers.get("Retry-After"),
+                            utcnow(),
+                            self.settings.webhook_retry_after_max_seconds,
+                        )
                         remaining = self.settings.webhook_response_max_bytes
                         chunks: list[bytes] = []
                         async for chunk in response.aiter_bytes():
@@ -239,10 +256,7 @@ class DeliveryService:
                         response_body = b"".join(chunks).decode(
                             "utf-8", errors="replace"
                         )
-                retryable = (
-                    status_code in {408, 425, 429}
-                    or (status_code is not None and status_code >= 500)
-                )
+                retryable = is_retryable_status(status_code)
                 if status_code is not None and not 200 <= status_code < 300:
                     error = (
                         "retryable_http_status"
@@ -275,6 +289,7 @@ class DeliveryService:
             status_code=status_code,
             error=error,
             response_body=response_body,
+            retry_after_seconds=retry_after_seconds,
         )
 
     async def deliver(self, claim: ClaimedDelivery) -> bool:
@@ -306,6 +321,7 @@ class DeliveryService:
                 status_code=result.status_code,
                 error=result.error,
                 response_body=result.response_body,
+                retry_after_seconds=result.retry_after_seconds,
             )
         finally:
             heartbeat_stop.set()
@@ -325,6 +341,7 @@ class DeliveryService:
         status_code: int | None,
         error: str | None,
         response_body: str | None,
+        retry_after_seconds: float | None = None,
     ) -> bool:
         async with self.session_factory() as session:
             async with session.begin():
@@ -341,30 +358,115 @@ class DeliveryService:
                 )
                 if delivery is None:
                     return False
+                endpoint_state = await session.scalar(
+                    select(EndpointQuotaState)
+                    .where(
+                        EndpointQuotaState.endpoint_id
+                        == delivery.endpoint_id
+                    )
+                    .with_for_update()
+                )
+                if endpoint_state is None:
+                    raise RuntimeError("Endpoint retry state is unavailable")
+
+                is_probe = (
+                    endpoint_state.half_open_probe_delivery_id == delivery.id
+                )
+                if succeeded:
+                    endpoint_state.retry_tokens = min(
+                        float(self.settings.endpoint_retry_burst),
+                        float(endpoint_state.retry_tokens)
+                        + self.settings.endpoint_retry_success_refill,
+                    )
+                    endpoint_state.retry_refilled_at = finished
+                    endpoint_state.circuit_state = "closed"
+                    endpoint_state.consecutive_failures = 0
+                    endpoint_state.circuit_open_until = None
+                    endpoint_state.half_open_probe_delivery_id = None
+                elif retryable:
+                    endpoint_state.consecutive_failures += 1
+                    if is_probe or (
+                        endpoint_state.circuit_state == "closed"
+                        and endpoint_state.consecutive_failures
+                        >= self.settings.endpoint_circuit_failure_threshold
+                    ):
+                        endpoint_state.circuit_state = "open"
+                        endpoint_state.circuit_open_until = (
+                            finished
+                            + timedelta(
+                                seconds=(
+                                    self.settings.endpoint_circuit_open_seconds
+                                )
+                            )
+                        )
+                        endpoint_state.half_open_probe_delivery_id = None
+                elif is_probe and error == "max_delivery_age":
+                    endpoint_state.circuit_state = "open"
+                    endpoint_state.circuit_open_until = finished
+                    endpoint_state.half_open_probe_delivery_id = None
+                elif is_probe or error != "max_delivery_age":
+                    endpoint_state.circuit_state = "closed"
+                    endpoint_state.consecutive_failures = 0
+                    endpoint_state.circuit_open_until = None
+                    endpoint_state.half_open_probe_delivery_id = None
+                endpoint_state.updated_at = finished
+
+                delivery_deadline = aware(delivery.created_at) + timedelta(
+                    seconds=self.settings.webhook_max_delivery_age_seconds
+                )
+                age_expired = finished >= delivery_deadline
                 if succeeded:
                     outcome = "succeeded"
                     delivery.status = "succeeded"
                     delivery.succeeded_at = finished
                     delivery.next_attempt_at = finished
+                    delivery.dead_at = None
+                    delivery.dead_reason = None
                 elif (
                     retryable
                     and claim.attempt_number
                     < self.settings.webhook_max_attempts
+                    and not age_expired
                 ):
-                    outcome = "retry_scheduled"
-                    delivery.status = "retry_scheduled"
-                    ceiling = min(
-                        self.settings.webhook_backoff_cap_seconds,
-                        self.settings.webhook_backoff_base_seconds
-                        * (2 ** (claim.attempt_number - 1)),
+                    delay = max(
+                        jittered_backoff(
+                            claim.attempt_number,
+                            self.settings.webhook_backoff_base_seconds,
+                            self.settings.webhook_backoff_cap_seconds,
+                        ),
+                        retry_after_seconds or 0.0,
                     )
-                    delivery.next_attempt_at = finished + timedelta(
-                        seconds=random.uniform(0, ceiling)
-                    )
+                    next_attempt_at = finished + timedelta(seconds=delay)
+                    if next_attempt_at < delivery_deadline:
+                        outcome = "retry_scheduled"
+                        delivery.status = "retry_scheduled"
+                        delivery.next_attempt_at = next_attempt_at
+                        delivery.dead_at = None
+                        delivery.dead_reason = None
+                    else:
+                        outcome = "dead"
+                        delivery.status = "dead"
+                        delivery.next_attempt_at = finished
+                        delivery.dead_at = finished
+                        delivery.dead_reason = "max_delivery_age"
                 else:
                     outcome = "dead"
                     delivery.status = "dead"
                     delivery.next_attempt_at = finished
+                    delivery.dead_at = finished
+                    if age_expired or error == "max_delivery_age":
+                        dead_reason = "max_delivery_age"
+                    elif (
+                        retryable
+                        and claim.attempt_number
+                        >= self.settings.webhook_max_attempts
+                    ):
+                        dead_reason = "max_attempts"
+                    elif status_code is not None and 400 <= status_code < 500:
+                        dead_reason = "non_retryable_http"
+                    else:
+                        dead_reason = error or "non_retryable_failure"
+                    delivery.dead_reason = dead_reason[:64]
                 delivery.last_http_status = status_code
                 delivery.last_error = error
                 delivery.lease_token = None

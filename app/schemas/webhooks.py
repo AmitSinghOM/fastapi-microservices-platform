@@ -127,7 +127,12 @@ class EventOut(BaseModel):
 
 
 DeliveryStatus = Literal[
-    "pending", "processing", "retry_scheduled", "succeeded", "dead"
+    "pending",
+    "processing",
+    "retry_scheduled",
+    "succeeded",
+    "dead",
+    "canceled",
 ]
 
 
@@ -143,6 +148,10 @@ class DeliveryOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     succeeded_at: datetime | None
+    dead_at: datetime | None
+    dead_reason: str | None
+    canceled_at: datetime | None
+    canceled_reason: str | None
 
 
 class DeliveryAttemptOut(BaseModel):
@@ -166,3 +175,60 @@ class ReplayOut(BaseModel):
     status: DeliveryStatus
     replay_of_delivery_id: int
     created_at: datetime
+
+
+class ReplayBatchRequest(BaseModel):
+    model_config = STRICT
+    delivery_ids: list[str] = Field(min_length=1, max_length=1_000)
+
+    @model_validator(mode="after")
+    def require_unique_ids(self) -> "ReplayBatchRequest":
+        if len(set(self.delivery_ids)) != len(self.delivery_ids):
+            raise ValueError("delivery_ids must be unique")
+        return self
+
+
+class ReplayOperationOut(BaseModel):
+    model_config = ORM
+    public_id: str
+    idempotency_key: str
+    mode: Literal["single", "bulk"]
+    requested_count: int
+    created_count: int
+    source_delivery_ids: list[str]
+    created_delivery_ids: list[str]
+    created_at: datetime
+
+
+class EndpointPauseRequest(BaseModel):
+    model_config = STRICT
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class EndpointRuntimeOut(BaseModel):
+    model_config = STRICT
+    endpoint_id: str
+    paused: bool
+    pause_reason: str | None
+    circuit_state: Literal["closed", "open", "half_open"]
+    consecutive_failures: int
+    circuit_open_until: datetime | None
+
+
+class DeliveryCancelRequest(BaseModel):
+    model_config = STRICT
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class DeliveryPurgeRequest(BaseModel):
+    model_config = STRICT
+    dry_run: bool = True
+    max_records: int = Field(default=500, ge=1, le=10_000)
+
+
+class DeliveryPurgeOut(BaseModel):
+    model_config = STRICT
+    cutoff: datetime
+    matched: int
+    purged: int
+    dry_run: bool

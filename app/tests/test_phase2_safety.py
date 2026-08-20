@@ -305,9 +305,11 @@ async def test_long_request_renews_lease_while_in_flight(
         del allow_http
         return url
 
+    two_renewals = asyncio.Event()
+
     async def receiver(request: httpx.Request) -> httpx.Response:
         del request
-        await asyncio.sleep(0.08)
+        await asyncio.wait_for(two_renewals.wait(), timeout=0.4)
         return httpx.Response(200)
 
     monkeypatch.setattr(
@@ -324,8 +326,12 @@ async def test_long_request_renews_lease_while_in_flight(
         renewals = 0
 
         async def renew_lease(self, claim: ClaimedDelivery) -> bool:
-            self.renewals += 1
-            return await super().renew_lease(claim)
+            renewed = await super().renew_lease(claim)
+            if renewed:
+                self.renewals += 1
+                if self.renewals >= 2:
+                    two_renewals.set()
+            return renewed
 
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(receiver)

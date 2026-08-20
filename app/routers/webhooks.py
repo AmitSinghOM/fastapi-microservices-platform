@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, Header, Query, status
+import csv
+from io import StringIO
+
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 
 from app.api_key_auth import get_api_key_project
 from app.auth import get_current_active_user
@@ -8,11 +11,16 @@ from app.schemas.webhooks import (
     ApiKeyCreate,
     ApiKeyCreated,
     ApiKeyOut,
+    DeliveryCancelRequest,
     DeliveryDetail,
     DeliveryOut,
+    DeliveryPurgeOut,
+    DeliveryPurgeRequest,
     EndpointCreate,
     EndpointCreated,
     EndpointOut,
+    EndpointPauseRequest,
+    EndpointRuntimeOut,
     EndpointSecretRotated,
     EndpointUpdate,
     EventCreate,
@@ -23,6 +31,8 @@ from app.schemas.webhooks import (
     OrganizationOut,
     ProjectCreate,
     ProjectOut,
+    ReplayBatchRequest,
+    ReplayOperationOut,
     ReplayOut,
 )
 from app.services.webhook_service import WebhookService
@@ -308,3 +318,174 @@ async def replay_delivery(
     service: WebhookService = Depends(get_webhook_service),
 ):
     return await service.replay_delivery(user.id, project_id, delivery_id)
+
+
+@router.post(
+    "/projects/{project_id}/replays",
+    response_model=ReplayOperationOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def replay_deliveries(
+    project_id: str,
+    body: ReplayBatchRequest,
+    idempotency_key: str = Header(alias="Idempotency-Key"),
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.replay_deliveries(
+        user.id, project_id, body.delivery_ids, idempotency_key
+    )
+
+
+@router.get(
+    "/projects/{project_id}/dead-deliveries",
+    response_model=list[DeliveryOut],
+)
+async def list_dead_deliveries(
+    project_id: str,
+    endpoint_id: str | None = Query(default=None),
+    reason: str | None = Query(default=None, max_length=64),
+    minimum_age_seconds: int | None = Query(default=None, ge=0),
+    pagination: tuple[int, int] = Depends(page),
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.list_dead_deliveries(
+        user.id,
+        project_id,
+        *pagination,
+        endpoint_id=endpoint_id,
+        reason=reason,
+        minimum_age_seconds=minimum_age_seconds,
+    )
+
+
+@router.get("/projects/{project_id}/dead-deliveries/export")
+async def export_dead_deliveries(
+    project_id: str,
+    endpoint_id: str | None = Query(default=None),
+    reason: str | None = Query(default=None, max_length=64),
+    minimum_age_seconds: int | None = Query(default=None, ge=0),
+    limit: int = Query(default=1_000, ge=1, le=1_000),
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    deliveries = await service.list_dead_deliveries(
+        user.id,
+        project_id,
+        0,
+        limit,
+        endpoint_id=endpoint_id,
+        reason=reason,
+        minimum_age_seconds=minimum_age_seconds,
+    )
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        (
+            "delivery_id",
+            "endpoint_id",
+            "dead_reason",
+            "attempt_count",
+            "last_http_status",
+            "dead_at",
+        )
+    )
+    for delivery in deliveries:
+        writer.writerow(
+            (
+                delivery.public_id,
+                delivery.endpoint_public_id_snapshot,
+                delivery.dead_reason,
+                delivery.attempt_count,
+                delivery.last_http_status,
+                delivery.dead_at.isoformat() if delivery.dead_at else "",
+            )
+        )
+    return Response(
+        output.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="dead-deliveries-{project_id}.csv"'
+            )
+        },
+    )
+
+
+@router.post(
+    "/projects/{project_id}/endpoints/{endpoint_id}/pause",
+    response_model=EndpointRuntimeOut,
+)
+async def pause_endpoint(
+    project_id: str,
+    endpoint_id: str,
+    body: EndpointPauseRequest,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.pause_endpoint(
+        user.id, project_id, endpoint_id, body.reason
+    )
+
+
+@router.post(
+    "/projects/{project_id}/endpoints/{endpoint_id}/resume",
+    response_model=EndpointRuntimeOut,
+)
+async def resume_endpoint(
+    project_id: str,
+    endpoint_id: str,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.resume_endpoint(user.id, project_id, endpoint_id)
+
+
+@router.post(
+    "/projects/{project_id}/endpoints/{endpoint_id}/recover-circuit",
+    response_model=EndpointRuntimeOut,
+)
+async def recover_endpoint_circuit(
+    project_id: str,
+    endpoint_id: str,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.recover_endpoint_circuit(
+        user.id, project_id, endpoint_id
+    )
+
+
+@router.post(
+    "/projects/{project_id}/deliveries/{delivery_id}/cancel",
+    response_model=DeliveryOut,
+)
+async def cancel_delivery(
+    project_id: str,
+    delivery_id: str,
+    body: DeliveryCancelRequest,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.cancel_delivery(
+        user.id, project_id, delivery_id, body.reason
+    )
+
+
+@router.post(
+    "/projects/{project_id}/deliveries/purge",
+    response_model=DeliveryPurgeOut,
+)
+async def purge_terminal_deliveries(
+    project_id: str,
+    body: DeliveryPurgeRequest,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.purge_terminal_deliveries(
+        user.id,
+        project_id,
+        body.dry_run,
+        body.max_records,
+    )
