@@ -1,26 +1,26 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic[email]==2.10.4
-pydantic-settings==2.7.1
-sqlalchemy[asyncio]==2.0.36
-aiosqlite==0.20.0
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+pydantic[email]==2.13.4
+pydantic-settings==2.15.0
+sqlalchemy[asyncio]==2.0.52
+aiosqlite==0.22.1
 httpx==0.28.1
-pytest==8.3.4
-pytest-asyncio==0.25.0
-python-multipart==0.0.20
+pytest==9.1.1
+pytest-asyncio==1.4.0
+python-multipart==0.0.32
 
 # Password hashing: bcrypt via passlib, replacing unsalted SHA-256.
 # bcrypt is pinned below 4.1 because passlib 1.7.4 reads bcrypt.__about__,
 # which 4.1 removed.
 passlib[bcrypt]==1.7.4
-bcrypt==4.0.1
+bcrypt==5.0.0
 
 # Access tokens
-PyJWT==2.10.1
+PyJWT==2.13.0
 
 # Versioned migrations and production PostgreSQL async driver
-alembic==1.14.0
-asyncpg==0.30.0
+alembic==1.19.1
+asyncpg==0.31.0
 
 # Low-cardinality metrics and W3C-compatible distributed tracing.
 prometheus-client==0.26.0
