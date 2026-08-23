@@ -1,7 +1,8 @@
 import csv
+from datetime import datetime
 from io import StringIO
 
-from fastapi import APIRouter, Depends, Header, Query, Response, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Response, status
 
 from app.api_key_auth import get_api_key_project
 from app.auth import get_current_active_user
@@ -11,6 +12,8 @@ from app.schemas.webhooks import (
     ApiKeyCreate,
     ApiKeyCreated,
     ApiKeyOut,
+    ApiKeyRotateRequest,
+    AuditEventOut,
     DeliveryCancelRequest,
     DeliveryDetail,
     DeliveryOut,
@@ -27,9 +30,17 @@ from app.schemas.webhooks import (
     EventOut,
     MemberCreate,
     MemberOut,
+    MemberUpdate,
     OrganizationCreate,
+    OrganizationExportOut,
+    OrganizationLifecycleOut,
     OrganizationOut,
+    OrganizationPolicyOut,
+    OrganizationPolicyUpdate,
     ProjectCreate,
+    ProjectMemberCreate,
+    ProjectMemberOut,
+    ProjectMemberUpdate,
     ProjectOut,
     ReplayBatchRequest,
     ReplayOperationOut,
@@ -45,6 +56,14 @@ def page(
     limit: int = Query(default=50, ge=1, le=100),
 ) -> tuple[int, int]:
     return offset, limit
+
+
+def _csv_cell(value: object) -> object:
+    if not isinstance(value, str) or not value:
+        return value
+    if value[0] in {"=", "+", "-", "@", "\t", "\r"}:
+        return f"'{value}"
+    return value
 
 
 @router.post(
@@ -98,6 +117,160 @@ async def list_members(
     return await service.list_members(user.id, organization_id, *pagination)
 
 
+@router.patch(
+    "/organizations/{organization_id}/members/{member_user_id}",
+    response_model=MemberOut,
+)
+async def update_member(
+    organization_id: str,
+    member_user_id: int,
+    body: MemberUpdate,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.update_member(
+        user.id, organization_id, member_user_id, body.role
+    )
+
+
+@router.delete(
+    "/organizations/{organization_id}/members/{member_user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_member(
+    organization_id: str,
+    member_user_id: int,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    await service.remove_member(user.id, organization_id, member_user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/organizations/{organization_id}/policy",
+    response_model=OrganizationPolicyOut,
+)
+async def get_policy(
+    organization_id: str,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.get_policy(user.id, organization_id)
+
+
+@router.patch(
+    "/organizations/{organization_id}/policy",
+    response_model=OrganizationPolicyOut,
+)
+async def update_policy(
+    organization_id: str,
+    body: OrganizationPolicyUpdate,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.update_policy(
+        user.id,
+        organization_id,
+        body.model_dump(exclude_unset=True),
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/audit",
+    response_model=list[AuditEventOut],
+    include_in_schema=False,
+)
+@router.get(
+    "/organizations/{organization_id}/audit-events",
+    response_model=list[AuditEventOut],
+)
+async def list_audit_events(
+    organization_id: str,
+    action: str | None = Query(default=None, max_length=100),
+    resource_type: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=100, ge=1, le=1_000),
+    before_created_at: datetime | None = Query(default=None),
+    before_id: int | None = Query(default=None, gt=0),
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.list_audit_events(
+        user.id,
+        organization_id,
+        action=action,
+        resource_type=resource_type,
+        limit=limit,
+        before_created_at=before_created_at,
+        before_id=before_id,
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/export",
+    response_model=OrganizationExportOut,
+)
+async def export_organization(
+    organization_id: str,
+    limit: int = Query(default=1_000, ge=1, le=1_000),
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.export_organization(user.id, organization_id, limit)
+
+
+@router.post(
+    "/organizations/{organization_id}/deletion",
+    response_model=OrganizationLifecycleOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
+@router.delete(
+    "/organizations/{organization_id}",
+    response_model=OrganizationLifecycleOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_organization_deletion(
+    organization_id: str,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.request_organization_deletion(
+        user.id, organization_id
+    )
+
+
+@router.get(
+    "/organizations/{organization_id}/deletion",
+    response_model=OrganizationLifecycleOut,
+)
+async def get_organization_deletion(
+    organization_id: str,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.get_organization_deletion(user.id, organization_id)
+
+
+@router.delete(
+    "/organizations/{organization_id}/deletion",
+    response_model=OrganizationLifecycleOut,
+    include_in_schema=False,
+)
+@router.post(
+    "/organizations/{organization_id}/deletion/cancel",
+    response_model=OrganizationLifecycleOut,
+)
+async def cancel_organization_deletion(
+    organization_id: str,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.cancel_organization_deletion(
+        user.id, organization_id
+    )
+
+
 @router.post(
     "/organizations/{organization_id}/projects",
     response_model=ProjectOut,
@@ -135,6 +308,81 @@ async def deactivate_project(
 
 
 @router.post(
+    "/projects/{project_id}/members",
+    response_model=ProjectMemberOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_project_member(
+    project_id: str,
+    body: ProjectMemberCreate,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.add_project_member(
+        user.id, project_id, body.user_id, body.role
+    )
+
+
+@router.get(
+    "/projects/{project_id}/members",
+    response_model=list[ProjectMemberOut],
+)
+async def list_project_members(
+    project_id: str,
+    pagination: tuple[int, int] = Depends(page),
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.list_project_members(user.id, project_id, *pagination)
+
+
+@router.put(
+    "/projects/{project_id}/members/{member_user_id}",
+    response_model=ProjectMemberOut,
+)
+async def upsert_project_member(
+    project_id: str,
+    member_user_id: int,
+    body: ProjectMemberUpdate,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.upsert_project_member(
+        user.id, project_id, member_user_id, body.role
+    )
+
+
+@router.patch(
+    "/projects/{project_id}/members/{member_user_id}",
+    response_model=ProjectMemberOut,
+)
+async def update_project_member(
+    project_id: str,
+    member_user_id: int,
+    body: ProjectMemberUpdate,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.update_project_member(
+        user.id, project_id, member_user_id, body.role
+    )
+
+
+@router.delete(
+    "/projects/{project_id}/members/{member_user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_project_member(
+    project_id: str,
+    member_user_id: int,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    await service.remove_project_member(user.id, project_id, member_user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
     "/projects/{project_id}/api-keys",
     response_model=ApiKeyCreated,
     status_code=status.HTTP_201_CREATED,
@@ -146,7 +394,11 @@ async def create_api_key(
     service: WebhookService = Depends(get_webhook_service),
 ):
     api_key, plaintext = await service.create_api_key(
-        user.id, project_id, body.name
+        user.id,
+        project_id,
+        body.name,
+        body.scopes,
+        body.expires_in_days,
     )
     data = ApiKeyOut.model_validate(api_key).model_dump()
     return ApiKeyCreated(**data, plaintext_key=plaintext)
@@ -174,6 +426,30 @@ async def revoke_api_key(
     service: WebhookService = Depends(get_webhook_service),
 ):
     return await service.revoke_api_key(user.id, project_id, key_id)
+
+
+@router.post(
+    "/projects/{project_id}/api-keys/{key_id}/rotate",
+    response_model=ApiKeyCreated,
+    status_code=status.HTTP_201_CREATED,
+)
+async def rotate_api_key(
+    project_id: str,
+    key_id: str,
+    body: ApiKeyRotateRequest = Body(
+        default_factory=ApiKeyRotateRequest
+    ),
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    api_key, plaintext = await service.rotate_api_key(
+        user.id,
+        project_id,
+        key_id,
+        overlap_seconds=body.overlap_seconds,
+    )
+    data = ApiKeyOut.model_validate(api_key).model_dump()
+    return ApiKeyCreated(**data, plaintext_key=plaintext)
 
 
 @router.post(
@@ -225,6 +501,19 @@ async def update_endpoint(
     )
 
 
+@router.delete(
+    "/projects/{project_id}/endpoints/{endpoint_id}",
+    response_model=EndpointOut,
+)
+async def deactivate_endpoint(
+    project_id: str,
+    endpoint_id: str,
+    user: User = Depends(get_current_active_user),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.deactivate_endpoint(user.id, project_id, endpoint_id)
+
+
 @router.post(
     "/projects/{project_id}/endpoints/{endpoint_id}/rotate-secret",
     response_model=EndpointSecretRotated,
@@ -235,13 +524,14 @@ async def rotate_endpoint_secret(
     user: User = Depends(get_current_active_user),
     service: WebhookService = Depends(get_webhook_service),
 ):
-    endpoint, secret = await service.rotate_endpoint_secret(
-        user.id, project_id, endpoint_id
+    endpoint, secret, previous_valid_until = (
+        await service.rotate_endpoint_secret(user.id, project_id, endpoint_id)
     )
     return EndpointSecretRotated(
         public_id=endpoint.public_id,
         secret_version=endpoint.secret_version,
         signing_secret=secret,
+        previous_valid_until=previous_valid_until,
     )
 
 
@@ -370,14 +660,13 @@ async def export_dead_deliveries(
     user: User = Depends(get_current_active_user),
     service: WebhookService = Depends(get_webhook_service),
 ):
-    deliveries = await service.list_dead_deliveries(
+    deliveries = await service.export_dead_deliveries(
         user.id,
         project_id,
-        0,
-        limit,
         endpoint_id=endpoint_id,
         reason=reason,
         minimum_age_seconds=minimum_age_seconds,
+        limit=limit,
     )
     output = StringIO()
     writer = csv.writer(output)
@@ -393,13 +682,20 @@ async def export_dead_deliveries(
     )
     for delivery in deliveries:
         writer.writerow(
-            (
-                delivery.public_id,
-                delivery.endpoint_public_id_snapshot,
-                delivery.dead_reason,
-                delivery.attempt_count,
-                delivery.last_http_status,
-                delivery.dead_at.isoformat() if delivery.dead_at else "",
+            tuple(
+                _csv_cell(value)
+                for value in (
+                    delivery.public_id,
+                    delivery.endpoint_public_id_snapshot,
+                    delivery.dead_reason,
+                    delivery.attempt_count,
+                    delivery.last_http_status,
+                    (
+                        delivery.dead_at.isoformat()
+                        if delivery.dead_at
+                        else ""
+                    ),
+                )
             )
         )
     return Response(

@@ -223,6 +223,22 @@ replicas must fit remaining database, egress, and NAT budgets. See
 [the Phase 6 contract](docs/phase6-observability-autoscaling.md) for metric
 semantics, SLOs, and reproducible 10× burst evidence.
 
+## Tenant security and lifecycle
+
+Organization and project roles now enforce least privilege across management,
+credentials, endpoint operations, replay, and retention. Producer API keys are
+scoped and expiring, support bounded-overlap rotation, and remain one-time
+plaintext values. Endpoint signing versions have explicit overlap windows while
+accepted deliveries retain their immutable version snapshots.
+
+Administrative mutations append sanitized immutable audit events. Per-tenant
+policies independently bound payload and receiver-response retention; the
+existing worker clears expired content and performs grace-delayed organization
+cleanup in bounded transactions. Organization export excludes payloads,
+responses, destinations, and credential material. See
+[the Phase 7 contract](docs/phase7-tenant-lifecycle.md) for the role matrix,
+rotation rules, deletion workflow, and encryption/key-management guidance.
+
 ## Migrations, operations, and compatibility
 
 Apply schema changes before API rollout:
@@ -238,7 +254,9 @@ state can only reflect what is visible during that upgrade. Revision `0004`
 backfills delivery organization ownership and initializes global, tenant, and
 endpoint admission state. Revision `0005` backfills dead-letter reasons and
 endpoint retry/circuit state, and creates replay audit records. Revision
-`0006` adds bounded W3C trace context to accepted events. Set
+`0006` adds bounded W3C trace context to accepted events. Revision `0007`
+adds role assignments, scoped key and endpoint-secret lifecycles, immutable
+audit history, retention policy, and organization cleanup state. Set
 `AUTO_CREATE_SCHEMA=false` in staging/production;
 those environments reject local schema auto-creation and require all three
 secrets at 32+ characters. Configuration includes multiplied replica/database

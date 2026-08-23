@@ -11,6 +11,7 @@ from prometheus_client import start_http_server
 
 from app.config import Settings, get_settings
 from app.db import create_database_resources
+from app.lifecycle import LifecycleService, run_lifecycle_loop
 from app.observability import (
     REGISTRY,
     QueueMetricsCollector,
@@ -45,50 +46,59 @@ async def run_delivery_loop(
     settings: Settings,
     stop: asyncio.Event,
 ) -> None:
-    """Claim only free execution slots, then drain bounded work on stop."""
+    """Claim free slots and always drain bounded work before returning."""
     in_flight: set[asyncio.Task[None]] = set()
-    while not stop.is_set():
-        in_flight = {task for task in in_flight if not task.done()}
-        set_worker_in_flight(len(in_flight), settings.worker_concurrency)
-        available = settings.worker_concurrency - len(in_flight)
-        if available > 0:
-            claims = await service.claim_due(
-                min(settings.worker_batch_size, available)
+    try:
+        while not stop.is_set():
+            done = {task for task in in_flight if task.done()}
+            if done:
+                await asyncio.gather(*done, return_exceptions=True)
+                in_flight -= done
+            set_worker_in_flight(
+                len(in_flight), settings.worker_concurrency
             )
-            if stop.is_set():
-                await asyncio.gather(
-                    *(service.release_claim(claim) for claim in claims)
+            available = settings.worker_concurrency - len(in_flight)
+            if available > 0:
+                claims = await service.claim_due(
+                    min(settings.worker_batch_size, available)
                 )
-                break
-            for claim in claims:
-                in_flight.add(asyncio.create_task(_run_claim(service, claim)))
-            set_worker_in_flight(len(in_flight), settings.worker_concurrency)
-            if claims:
-                continue
+                if stop.is_set():
+                    await asyncio.gather(
+                        *(service.release_claim(claim) for claim in claims)
+                    )
+                    break
+                for claim in claims:
+                    in_flight.add(
+                        asyncio.create_task(_run_claim(service, claim))
+                    )
+                set_worker_in_flight(
+                    len(in_flight), settings.worker_concurrency
+                )
+                if claims:
+                    continue
+            if in_flight:
+                await asyncio.wait(
+                    in_flight,
+                    timeout=settings.worker_poll_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            else:
+                try:
+                    await asyncio.wait_for(
+                        stop.wait(), timeout=settings.worker_poll_seconds
+                    )
+                except TimeoutError:
+                    pass
+    finally:
         if in_flight:
-            await asyncio.wait(
+            _, pending = await asyncio.wait(
                 in_flight,
-                timeout=settings.worker_poll_seconds,
-                return_when=asyncio.FIRST_COMPLETED,
+                timeout=settings.worker_shutdown_grace_seconds,
             )
-        else:
-            try:
-                await asyncio.wait_for(
-                    stop.wait(), timeout=settings.worker_poll_seconds
-                )
-            except TimeoutError:
-                pass
-
-    if not in_flight:
-        return
-    _, pending = await asyncio.wait(
-        in_flight,
-        timeout=settings.worker_shutdown_grace_seconds,
-    )
-    for task in pending:
-        task.cancel()
-    await asyncio.gather(*in_flight, return_exceptions=True)
-    set_worker_in_flight(0, settings.worker_concurrency)
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*in_flight, return_exceptions=True)
+        set_worker_in_flight(0, settings.worker_concurrency)
 
 
 def create_http_client(settings: Settings) -> httpx.AsyncClient:
@@ -149,8 +159,28 @@ async def run_worker() -> None:
                 settings,
                 engine=database.engine,
             )
+            lifecycle_service = LifecycleService(
+                database.session_factory,
+                settings,
+            )
+            lifecycle_task = asyncio.create_task(
+                run_lifecycle_loop(lifecycle_service, stop)
+            )
             logger.info("Webhook worker started")
-            await run_delivery_loop(service, settings, stop)
+            try:
+                await run_delivery_loop(service, settings, stop)
+            finally:
+                stop.set()
+                try:
+                    await asyncio.wait_for(
+                        lifecycle_task,
+                        timeout=settings.worker_shutdown_grace_seconds,
+                    )
+                except TimeoutError:
+                    lifecycle_task.cancel()
+                    await asyncio.gather(
+                        lifecycle_task, return_exceptions=True
+                    )
     finally:
         for signal_name in installed_signals:
             loop.remove_signal_handler(signal_name)

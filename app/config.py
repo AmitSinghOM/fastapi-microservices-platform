@@ -119,6 +119,28 @@ class Settings(BaseSettings):
     bulk_replay_max_deliveries: int = Field(default=100, ge=1, le=1_000)
     delivery_retention_days: int = Field(default=30, ge=1, le=3_650)
     delivery_purge_batch_size: int = Field(default=500, ge=1, le=10_000)
+    api_key_default_ttl_days: int = Field(default=90, ge=1, le=3_650)
+    api_key_rotation_overlap_seconds: int = Field(
+        default=300, ge=1, le=86_400
+    )
+    endpoint_secret_overlap_seconds: int = Field(
+        default=86_405, ge=1, le=2_592_060
+    )
+    organization_deletion_grace_hours: int = Field(
+        default=72, ge=1, le=8_760
+    )
+    lifecycle_cleanup_interval_seconds: float = Field(
+        default=60.0, gt=0, le=86_400
+    )
+    lifecycle_cleanup_batch_size: int = Field(
+        default=100, ge=1, le=10_000
+    )
+    default_payload_retention_days: int = Field(
+        default=30, ge=1, le=3_650
+    )
+    default_response_retention_days: int = Field(
+        default=30, ge=1, le=3_650
+    )
     api_key_usage_flush_seconds: float = Field(default=30.0, gt=0, le=600)
     api_key_usage_max_entries: int = Field(
         default=10_000, ge=100, le=1_000_000
@@ -209,6 +231,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 "WEBHOOK_RETRY_AFTER_MAX_SECONDS must not exceed the "
                 "maximum delivery age"
+            )
+        required_secret_overlap = (
+            self.webhook_max_delivery_age_seconds
+            + self.worker_finalization_margin_seconds
+        )
+        if self.endpoint_secret_overlap_seconds < required_secret_overlap:
+            raise ValueError(
+                "ENDPOINT_SECRET_OVERLAP_SECONDS must cover the maximum "
+                "delivery age and worker finalization margin"
             )
         if self.endpoint_retry_success_refill > self.endpoint_retry_burst:
             raise ValueError(

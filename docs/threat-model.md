@@ -42,10 +42,10 @@ compromised dependencies or workers, and operators making mistakes.
 
 | Threat | Impact | Current controls | Residual work |
 | --- | --- | --- | --- |
-| Cross-tenant object access | Disclosure or modification | Membership-scoped queries; opaque public IDs | Phase 7 role and isolation matrix |
-| API/JWT theft | Unauthorized ingestion or administration | Digests, peppers, revocation, bounded JWT life | Rotation, expiry, scopes, audit |
-| Forged webhook | Receiver accepts attacker data | HMAC over timestamp and exact bytes | Receiver SDK and rotation overlap |
-| Replay or duplicate | Repeated business action | Stable event ID; documented at-least-once contract | Shared replay quotas and audit |
+| Cross-tenant object access | Disclosure or modification | Organization/project role matrix; tenant-hiding `404`; visible denial `403` | Extend the matrix with every future management route |
+| API/JWT theft | Unauthorized ingestion or administration | Digests, peppers, revocation, bounded JWT life, scoped expiring API keys, overlap rotation, immutable audit | Add staged root/pepper rotation tooling |
+| Forged webhook | Receiver accepts attacker data | HMAC over timestamp and exact bytes; versioned secrets with bounded verification overlap | Receiver SDK in Phase 8 |
+| Replay or duplicate | Repeated business action | Stable event ID; documented at-least-once contract; shared quotas and audited replay | Receiver deduplication remains required |
 | Idempotency race | Duplicate event/fan-out | Unique constraint and conflict handling | Continue PostgreSQL stress coverage |
 | Lease theft/stale write | Duplicate or corrupt outcome | Skip-locked claims and token finalization | Heartbeats and slot-aware claims |
 | SSRF/DNS rebinding | Internal service or metadata access | URL/all-answer DNS checks, no redirects, HTTPS:443 deployed; isolated CONNECT proxy independently resolves and denies special networks | Equivalent policy required outside Compose; recurring bypass corpus |
@@ -63,8 +63,9 @@ compromised dependencies or workers, and operators making mistakes.
 - A malicious member enumerates another organization's identifiers.
 - CI or a dependency attempts to read release credentials.
 
-Phase 4 quotas/fairness, Phase 5 retry budgets, and Phase 7 fine-grained roles
-remain required before broad multi-tenant production claims.
+Phase 4 quotas/fairness, Phase 5 retry budgets, and Phase 7 fine-grained
+roles, credential lifecycle, retention, and deletion controls are required
+before broad multi-tenant production claims.
 
 ## Security invariants
 
@@ -80,6 +81,10 @@ remain required before broad multi-tenant production claims.
   variables, and cannot route directly to the outbound network.
 - Security deny metrics and audit logs contain only fixed layer/reason values,
   never destination URLs, hosts, addresses, credentials, queries, or bodies.
+- Administrative audit rows reject update/delete operations and survive tenant
+  deletion without mutable foreign-key relationships.
+- Retention clears payload/response content only after policy age and terminal
+  delivery checks; deletion-pending tenants accept no new mutations or events.
 ## Operational requirements
 
 Production deployments must use HTTPS, stable managed secrets, least-privilege

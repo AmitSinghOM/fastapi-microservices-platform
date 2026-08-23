@@ -6,6 +6,15 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 STRICT = ConfigDict(extra="forbid", strict=True)
 ORM = ConfigDict(extra="forbid", strict=True, from_attributes=True)
 
+OrganizationRole = Literal["owner", "admin", "member"]
+ProjectRole = Literal["admin", "operator", "viewer"]
+ApiKeyScope = Literal["events:write"]
+Plan = Literal["free", "standard", "enterprise"]
+
+
+def default_api_key_scopes() -> list[ApiKeyScope]:
+    return ["events:write"]
+
 
 class OrganizationCreate(BaseModel):
     model_config = STRICT
@@ -16,19 +25,27 @@ class OrganizationOut(BaseModel):
     model_config = ORM
     public_id: str
     name: str
+    lifecycle_state: Literal["active", "deletion_pending"]
+    deletion_requested_at: datetime | None
+    deletion_scheduled_at: datetime | None
     created_at: datetime
 
 
 class MemberCreate(BaseModel):
     model_config = STRICT
     user_id: int = Field(gt=0)
-    role: Literal["owner", "member"] = "member"
+    role: OrganizationRole = "member"
+
+
+class MemberUpdate(BaseModel):
+    model_config = STRICT
+    role: OrganizationRole
 
 
 class MemberOut(BaseModel):
     model_config = ORM
     user_id: int
-    role: Literal["owner", "member"]
+    role: OrganizationRole
     created_at: datetime
 
 
@@ -45,9 +62,42 @@ class ProjectOut(BaseModel):
     created_at: datetime
 
 
+class ProjectMemberCreate(BaseModel):
+    model_config = STRICT
+    user_id: int = Field(gt=0)
+    role: ProjectRole = "viewer"
+
+
+class ProjectMemberUpdate(BaseModel):
+    model_config = STRICT
+    role: ProjectRole
+
+
+class ProjectMemberOut(BaseModel):
+    model_config = ORM
+    user_id: int
+    role: ProjectRole
+    created_at: datetime
+
+
 class ApiKeyCreate(BaseModel):
     model_config = STRICT
     name: str = Field(min_length=1, max_length=120)
+    scopes: list[ApiKeyScope] = Field(
+        default_factory=default_api_key_scopes, min_length=1, max_length=16
+    )
+    expires_in_days: int | None = Field(default=None, ge=1, le=3_650)
+
+    @model_validator(mode="after")
+    def require_unique_scopes(self) -> "ApiKeyCreate":
+        if len(set(self.scopes)) != len(self.scopes):
+            raise ValueError("scopes must be unique")
+        return self
+
+
+class ApiKeyRotateRequest(BaseModel):
+    model_config = STRICT
+    overlap_seconds: int | None = Field(default=None, ge=1, le=86_400)
 
 
 class ApiKeyOut(BaseModel):
@@ -55,6 +105,9 @@ class ApiKeyOut(BaseModel):
     public_id: str
     name: str
     key_prefix: str
+    scopes: list[str]
+    expires_at: datetime | None
+    rotation_family_id: str
     is_active: bool
     created_at: datetime
     last_used_at: datetime | None
@@ -109,6 +162,7 @@ class EndpointSecretRotated(BaseModel):
     public_id: str
     secret_version: int
     signing_secret: str
+    previous_valid_until: datetime | None
 
 
 class EventCreate(BaseModel):
@@ -122,7 +176,8 @@ class EventOut(BaseModel):
     public_id: str
     idempotency_key: str
     event_type: str
-    payload: Any
+    payload: Any | None
+    payload_purged_at: datetime | None
     created_at: datetime
 
 
@@ -163,6 +218,7 @@ class DeliveryAttemptOut(BaseModel):
     http_status: int | None
     error: str | None
     response_body: str | None
+    response_purged_at: datetime | None
 
 
 class DeliveryDetail(DeliveryOut):
@@ -228,7 +284,118 @@ class DeliveryPurgeRequest(BaseModel):
 
 class DeliveryPurgeOut(BaseModel):
     model_config = STRICT
-    cutoff: datetime
+    cutoff: datetime | None
     matched: int
     purged: int
     dry_run: bool
+
+
+class OrganizationPolicyUpdate(BaseModel):
+    model_config = STRICT
+    plan: Plan | None = None
+    payload_retention_days: int | None = Field(
+        default=None, ge=1, le=3_650
+    )
+    response_retention_days: int | None = Field(
+        default=None, ge=1, le=3_650
+    )
+
+    @model_validator(mode="after")
+    def require_valid_change(self) -> "OrganizationPolicyUpdate":
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be provided")
+        for field_name in self.model_fields_set:
+            if getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} cannot be null")
+        return self
+
+
+class OrganizationPolicyOut(BaseModel):
+    model_config = ORM
+    plan: Plan
+    payload_retention_days: int
+    response_retention_days: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class AuditEventOut(BaseModel):
+    model_config = ORM
+    id: int
+    public_id: str
+    organization_public_id: str
+    project_public_id: str | None
+    actor_user_id: int | None
+    action: str
+    resource_type: str
+    resource_public_id: str | None
+    sanitized_metadata: dict[str, Any]
+    created_at: datetime
+
+
+class OrganizationLifecycleOut(BaseModel):
+    model_config = ORM
+    public_id: str
+    kind: Literal["deletion"]
+    status: Literal["pending", "running", "completed", "canceled", "failed"]
+    scheduled_at: datetime
+    created_at: datetime
+    completed_at: datetime | None
+    error: str | None
+
+
+class OrganizationExportProject(BaseModel):
+    model_config = STRICT
+    public_id: str
+    name: str
+    is_active: bool
+    created_at: datetime
+
+
+class OrganizationExportApiKey(BaseModel):
+    model_config = STRICT
+    public_id: str
+    project_public_id: str
+    prefix: str
+    scopes: list[str]
+    expires_at: datetime | None
+    status: Literal["active", "expired", "revoked"]
+    created_at: datetime
+
+
+class OrganizationExportEndpoint(BaseModel):
+    model_config = STRICT
+    public_id: str
+    project_public_id: str
+    description: str | None
+    is_active: bool
+    signing_version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class OrganizationExportCounts(BaseModel):
+    model_config = STRICT
+    members: int = Field(ge=0)
+    projects: int = Field(ge=0)
+    project_members: int = Field(ge=0)
+    api_keys: int = Field(ge=0)
+    endpoints: int = Field(ge=0)
+    events: int = Field(ge=0)
+    deliveries: int = Field(ge=0)
+    attempts: int = Field(ge=0)
+
+
+class OrganizationExportOut(BaseModel):
+    model_config = STRICT
+    generated_at: datetime
+    organization: OrganizationOut
+    policy: OrganizationPolicyOut
+    lifecycle: OrganizationLifecycleOut | None
+    counts: OrganizationExportCounts
+    members: list[MemberOut]
+    projects: list[OrganizationExportProject]
+    api_keys: list[OrganizationExportApiKey]
+    endpoints: list[OrganizationExportEndpoint]
+    audit_events: list[AuditEventOut]
+    truncated: bool

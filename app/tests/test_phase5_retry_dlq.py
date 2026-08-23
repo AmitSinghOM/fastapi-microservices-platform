@@ -14,6 +14,8 @@ from app.models import (
     Delivery,
     EndpointQuotaState,
     OrganizationMember,
+    Project,
+    ProjectMember,
     ReplayOperation,
 )
 from app.retry_policy import is_retryable_status, parse_retry_after
@@ -216,12 +218,24 @@ async def test_dead_operations_replay_pause_cancel_export_and_purge(
     delivery.dead_reason = "max_attempts"
     delivery.dead_at = datetime.now(timezone.utc) - timedelta(days=2)
     delivery.updated_at = delivery.dead_at
-    db_session.add(
-        OrganizationMember(
-            organization_id=delivery.organization_id,
-            user_id=other_user["id"],
-            role="member",
-            created_at=datetime.now(timezone.utc),
+    project = await db_session.scalar(
+        select(Project).where(Project.public_id == project_id)
+    )
+    assert project is not None
+    db_session.add_all(
+        (
+            OrganizationMember(
+                organization_id=delivery.organization_id,
+                user_id=other_user["id"],
+                role="member",
+                created_at=datetime.now(timezone.utc),
+            ),
+            ProjectMember(
+                project_id=project.id,
+                user_id=other_user["id"],
+                role="viewer",
+                created_at=datetime.now(timezone.utc),
+            ),
         )
     )
     await db_session.commit()
@@ -292,7 +306,7 @@ async def test_dead_operations_replay_pause_cancel_export_and_purge(
         headers=other_bearer,
         json={"dry_run": True, "max_records": 100},
     )
-    assert denied_purge.status_code == 404
+    assert denied_purge.status_code == 403
     preview = await client.post(
         f"/v1/projects/{project_id}/deliveries/purge",
         headers=bearer,

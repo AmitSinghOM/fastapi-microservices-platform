@@ -1,5 +1,6 @@
 from sqlalchemy import (
     JSON,
+    DDL,
     Boolean,
     CheckConstraint,
     Column,
@@ -13,6 +14,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
+    text,
 )
 from sqlalchemy.orm import relationship
 
@@ -59,19 +62,74 @@ class Item(Base):
 
 class Organization(Base):
     __tablename__ = "organizations"
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle_state IN ('active', 'deletion_pending')",
+            name="ck_organizations_lifecycle_state",
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     public_id = Column(String(36), unique=True, index=True, nullable=False)
     name = Column(String(120), nullable=False)
+    lifecycle_state = Column(
+        String(24), default="active", server_default="active", nullable=False
+    )
+    deletion_requested_at = Column(DateTime(timezone=True), nullable=True)
+    deletion_scheduled_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
 
     members = relationship(
         "OrganizationMember", cascade="all, delete-orphan"
     )
     projects = relationship("Project", cascade="all, delete-orphan")
+    policy = relationship(
+        "OrganizationPolicy", cascade="all, delete-orphan", uselist=False
+    )
+    lifecycle_operations = relationship(
+        "OrganizationLifecycleOperation",
+        cascade="all, delete-orphan",
+    )
     quota_state = relationship(
         "TenantQuotaState", cascade="all, delete-orphan", uselist=False
     )
+
+
+class OrganizationPolicy(Base):
+    __tablename__ = "organization_policies"
+    __table_args__ = (
+        CheckConstraint(
+            "plan IN ('free', 'standard', 'enterprise')",
+            name="ck_organization_policies_plan",
+        ),
+        CheckConstraint(
+            "payload_retention_days > 0",
+            name="ck_organization_policies_payload_retention",
+        ),
+        CheckConstraint(
+            "response_retention_days > 0",
+            name="ck_organization_policies_response_retention",
+        ),
+    )
+
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    plan = Column(
+        String(16), default="free", server_default="free", nullable=False
+    )
+    payload_retention_days = Column(
+        Integer, default=30, server_default="30", nullable=False
+    )
+    response_retention_days = Column(
+        Integer, default=30, server_default="30", nullable=False
+    )
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
+
+    organization = relationship("Organization", overlaps="policy")
 
 
 class OrganizationMember(Base):
@@ -81,7 +139,8 @@ class OrganizationMember(Base):
             "organization_id", "user_id", name="uq_org_members_org_user"
         ),
         CheckConstraint(
-            "role IN ('owner', 'member')", name="ck_org_members_role"
+            "role IN ('owner', 'admin', 'member')",
+            name="ck_org_members_role",
         ),
         Index("ix_org_members_user_org", "user_id", "organization_id"),
     )
@@ -121,6 +180,7 @@ class Project(Base):
     created_at = Column(DateTime(timezone=True), nullable=False)
 
     organization = relationship("Organization", overlaps="projects")
+    members = relationship("ProjectMember", cascade="all, delete-orphan")
     api_keys = relationship("ApiKey", cascade="all, delete-orphan")
     endpoints = relationship(
         "WebhookEndpoint", cascade="all, delete-orphan"
@@ -128,11 +188,41 @@ class Project(Base):
     events = relationship("Event", cascade="all, delete-orphan")
 
 
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "user_id", name="uq_project_members_project_user"
+        ),
+        CheckConstraint(
+            "role IN ('admin', 'operator', 'viewer')",
+            name="ck_project_members_role",
+        ),
+        Index("ix_project_members_user_project", "user_id", "project_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role = Column(String(16), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+    project = relationship("Project", overlaps="members")
+    user = relationship("User")
+
+
 class ApiKey(Base):
     __tablename__ = "api_keys"
     __table_args__ = (
         Index("ix_api_keys_project_created", "project_id", "created_at"),
         Index("ix_api_keys_prefix_active", "key_prefix", "is_active"),
+        Index("ix_api_keys_expiry_active", "expires_at", "is_active"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -145,12 +235,30 @@ class ApiKey(Base):
     name = Column(String(120), nullable=False)
     key_prefix = Column(String(24), unique=True, nullable=False)
     key_digest = Column(String(64), nullable=False)
+    scopes = Column(
+        JSON,
+        default=lambda: ["events:write"],
+        server_default=text("'[\"events:write\"]'"),
+        nullable=False,
+    )
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    rotation_family_id = Column(
+        String(36),
+        default=lambda context: context.get_current_parameters()["public_id"],
+        nullable=False,
+    )
+    rotated_from_id = Column(
+        Integer,
+        ForeignKey("api_keys.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
     last_used_at = Column(DateTime(timezone=True), nullable=True)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
 
     project = relationship("Project", overlaps="api_keys")
+    rotated_from = relationship("ApiKey", remote_side=[id])
 
 
 class GlobalControlState(Base):
@@ -254,6 +362,43 @@ class WebhookEndpoint(Base):
     quota_state = relationship(
         "EndpointQuotaState", cascade="all, delete-orphan", uselist=False
     )
+    signing_secret_versions = relationship(
+        "EndpointSigningSecretVersion",
+        cascade="all, delete-orphan",
+    )
+
+
+class EndpointSigningSecretVersion(Base):
+    __tablename__ = "endpoint_signing_secret_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "endpoint_id",
+            "version",
+            name="uq_endpoint_signing_secrets_endpoint_version",
+        ),
+        CheckConstraint(
+            "version >= 1", name="ck_endpoint_signing_secrets_version"
+        ),
+        Index(
+            "ix_endpoint_signing_secrets_retirement",
+            "endpoint_id",
+            "retire_at",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    endpoint_id = Column(
+        Integer,
+        ForeignKey("webhook_endpoints.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    version = Column(Integer, nullable=False)
+    activated_at = Column(DateTime(timezone=True), nullable=False)
+    retire_at = Column(DateTime(timezone=True), nullable=True)
+
+    endpoint = relationship(
+        "WebhookEndpoint", overlaps="signing_secret_versions"
+    )
 
 
 class Event(Base):
@@ -274,9 +419,10 @@ class Event(Base):
     )
     idempotency_key = Column(String(255), nullable=False)
     event_type = Column(String(150), nullable=False)
-    payload = Column(JSON, nullable=False)
+    payload = Column(JSON, nullable=True)
     payload_hash = Column(String(64), nullable=False)
-    canonical_envelope = Column(LargeBinary, nullable=False)
+    canonical_envelope = Column(LargeBinary, nullable=True)
+    payload_purged_at = Column(DateTime(timezone=True), nullable=True)
     traceparent = Column(String(55))
     tracestate = Column(String(512))
     created_at = Column(DateTime(timezone=True), nullable=False)
@@ -423,6 +569,113 @@ class ReplayOperation(Base):
     created_at = Column(DateTime(timezone=True), nullable=False)
 
 
+class OrganizationLifecycleOperation(Base):
+    __tablename__ = "organization_lifecycle_operations"
+    __table_args__ = (
+        CheckConstraint(
+            "kind = 'deletion'",
+            name="ck_org_lifecycle_operations_kind",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'canceled', "
+            "'failed')",
+            name="ck_org_lifecycle_operations_status",
+        ),
+        Index(
+            "ix_org_lifecycle_operations_org_created",
+            "organization_id",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_org_lifecycle_operations_status_scheduled",
+            "status",
+            "scheduled_at",
+            "id",
+        ),
+        Index(
+            "uq_org_lifecycle_operations_active",
+            "organization_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'running')"),
+            sqlite_where=text("status IN ('pending', 'running')"),
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    public_id = Column(String(36), unique=True, index=True, nullable=False)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    requested_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    kind = Column(String(16), nullable=False)
+    status = Column(String(16), nullable=False)
+    scheduled_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    error = Column(String(500), nullable=True)
+
+    organization = relationship(
+        "Organization", overlaps="lifecycle_operations"
+    )
+    requested_by_user = relationship("User")
+
+
+class AdministrativeAuditEvent(Base):
+    __tablename__ = "administrative_audit_events"
+    __table_args__ = (
+        Index(
+            "ix_administrative_audit_events_org_created",
+            "organization_public_id",
+            "created_at",
+            "id",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    public_id = Column(String(36), unique=True, index=True, nullable=False)
+    organization_public_id = Column(String(36), nullable=False)
+    project_public_id = Column(String(36), nullable=True)
+    actor_user_id = Column(Integer, nullable=True)
+    action = Column(String(100), nullable=False)
+    resource_type = Column(String(100), nullable=False)
+    resource_public_id = Column(String(36), nullable=True)
+    sanitized_metadata = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+
+
+_AUDIT_IMMUTABILITY_FUNCTION = DDL("""
+CREATE FUNCTION reject_administrative_audit_event_mutation()
+RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'administrative audit events are immutable';
+END;
+$$ LANGUAGE plpgsql
+""").execute_if(dialect="postgresql")
+_AUDIT_IMMUTABILITY_TRIGGER = DDL("""
+CREATE TRIGGER trg_administrative_audit_events_immutable
+BEFORE UPDATE OR DELETE ON administrative_audit_events
+FOR EACH ROW
+EXECUTE FUNCTION reject_administrative_audit_event_mutation()
+""").execute_if(dialect="postgresql")
+event.listen(
+    AdministrativeAuditEvent.__table__,
+    "after_create",
+    _AUDIT_IMMUTABILITY_FUNCTION,
+)
+event.listen(
+    AdministrativeAuditEvent.__table__,
+    "after_create",
+    _AUDIT_IMMUTABILITY_TRIGGER,
+)
+
+
 class DeliveryAttempt(Base):
     __tablename__ = "delivery_attempts"
     __table_args__ = (
@@ -445,5 +698,6 @@ class DeliveryAttempt(Base):
     http_status = Column(Integer, nullable=True)
     error = Column(String(500), nullable=True)
     response_body = Column(Text, nullable=True)
+    response_purged_at = Column(DateTime(timezone=True), nullable=True)
 
     delivery = relationship("Delivery", overlaps="attempts")

@@ -320,17 +320,37 @@ required remote gate is explicitly authorized.
 
 **Purpose:** make multi-tenant operation auditable and maintainable.
 
-- [ ] Add fine-grained organization/project roles and least-privilege checks.
-- [ ] Add scoped and expiring API keys with rotation overlap.
-- [ ] Add endpoint signing-secret rotation with a verification overlap window.
-- [ ] Add immutable administrative audit events for key, endpoint, replay,
+- [x] Add fine-grained organization/project roles and least-privilege checks.
+- [x] Add scoped and expiring API keys with rotation overlap.
+- [x] Add endpoint signing-secret rotation with a verification overlap window.
+- [x] Add immutable administrative audit events for key, endpoint, replay,
       membership, and quota changes.
-- [ ] Define payload and response retention policies by tenant plan.
-- [ ] Add encryption and key-management guidance for sensitive persisted data.
-- [ ] Add organization deletion/export workflows and background cleanup.
+- [x] Define payload and response retention policies by tenant plan.
+- [x] Add encryption and key-management guidance for sensitive persisted data.
+- [x] Add organization deletion/export workflows and background cleanup.
 
-**Completion gate:** authorization, rotation, retention, and deletion behavior
-are covered by tenant-isolation tests and documented operational procedures.
+**Phase 7 evidence (2026-08-22):**
+`docs/phase7-tenant-lifecycle.md` defines the role/permission matrix,
+non-enumerating isolation behavior, credential overlap, immutable audit,
+retention, safe export, deletion, and encryption/key-custody contracts. Existing
+organization members migrate to administrators to preserve access; new members
+require explicit project roles. Producer keys are scoped and expiring, endpoint
+signing versions retain bounded verification overlap, and replay rejects retired
+versions or purged content. Administrative changes append sanitized audit rows
+in the mutation transaction, and PostgreSQL rejects audit updates/deletes.
+
+Focused tests cover cross-tenant `404` versus visible `403`, last-owner safety,
+project roles, key and signing-version rotation, replay safety, policy, audit
+redaction, bounded export, deletion blocking/cancel, per-tenant content
+retention, bounded worker cleanup, and database-enforced audit immutability.
+Ruff, mypy, compilation, 115 fast tests, and the complete 126-test
+SQLite/PostgreSQL suite pass. A clean disposable PostgreSQL database upgraded
+through `0007`, reported no Alembic drift, downgraded to `0006`, and re-upgraded.
+
+**Completion gate: passed on 2026-08-22.** Tenant-isolation, authorization,
+rotation, retention, export, and deletion behavior have executable coverage and
+documented operational procedures. Phase 8 must not begin until these changes
+are committed, pushed, and required hosted checks are green.
 
 ## Phase 8 — Developer adoption
 
