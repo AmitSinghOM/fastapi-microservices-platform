@@ -545,7 +545,7 @@ async def test_policy_audit_export_purge_and_deletion_lifecycle(
         "/v1/events",
         headers={
             "X-API-Key": key.json()["plaintext_key"],
-            "Idempotency-Key": "phase7-deletion-pending",
+            "Idempotency-Key": "pending",
         },
         json={"type": "phase7.pending", "payload": {}},
     )
@@ -566,7 +566,7 @@ async def test_policy_audit_export_purge_and_deletion_lifecycle(
         "/v1/events",
         headers={
             "X-API-Key": key.json()["plaintext_key"],
-            "Idempotency-Key": "phase7-deletion-canceled",
+            "Idempotency-Key": "restored",
         },
         json={"type": "phase7.restored", "payload": {}},
     )
