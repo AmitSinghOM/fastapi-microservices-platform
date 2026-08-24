@@ -1496,20 +1496,26 @@ class WebhookService:
         idempotency_key: str,
         event_type: str,
         payload: object,
+        envelope_mode: str = "native",
     ) -> Event:
         project_id = project.id
         key_max_length = self.settings.idempotency_key_max_length
         if not 1 <= len(idempotency_key) <= key_max_length:
             raise ValidationError("Idempotency-Key length is invalid")
+        if envelope_mode not in {"native", "cloudevents"}:
+            raise ValidationError("Envelope mode is invalid")
         try:
             payload_bytes = canonical_json(payload)
         except (TypeError, ValueError) as exc:
             raise ValidationError("Payload must be valid finite JSON") from exc
         if len(payload_bytes) > self.settings.webhook_payload_max_bytes:
             raise ValidationError("Webhook payload exceeds configured limit")
-        fingerprint = hashlib.sha256(
-            event_type.encode("utf-8") + b"\0" + payload_bytes
-        ).hexdigest()
+        fingerprint_material = event_type.encode("utf-8") + b"\0" + payload_bytes
+        if envelope_mode != "native":
+            fingerprint_material = (
+                envelope_mode.encode("ascii") + b"\0" + fingerprint_material
+            )
+        fingerprint = hashlib.sha256(fingerprint_material).hexdigest()
         existing = await self.db.scalar(
             select(Event).where(
                 Event.project_id == project_id,
@@ -1519,6 +1525,7 @@ class WebhookService:
         if existing:
             content_changed = (
                 existing.event_type != event_type
+                or existing.envelope_mode != envelope_mode
                 or existing.payload_hash != fingerprint
             )
             if content_changed:
@@ -1540,6 +1547,7 @@ class WebhookService:
         if existing:
             content_changed = (
                 existing.event_type != event_type
+                or existing.envelope_mode != envelope_mode
                 or existing.payload_hash != fingerprint
             )
             if content_changed:
@@ -1549,14 +1557,26 @@ class WebhookService:
             record_event("idempotent")
             return existing
         event_public_id = str(uuid4())
-        canonical_envelope = canonical_json(
-            {
+        if envelope_mode == "cloudevents":
+            envelope = {
+                "data": payload,
+                "datacontenttype": "application/json",
+                "id": event_public_id,
+                "source": (
+                    f"urn:webhook-platform:project:{project.public_id}"
+                ),
+                "specversion": "1.0",
+                "time": now.isoformat(),
+                "type": event_type,
+            }
+        else:
+            envelope = {
                 "id": event_public_id,
                 "type": event_type,
                 "created_at": now.isoformat(),
                 "data": payload,
             }
-        )
+        canonical_envelope = canonical_json(envelope)
         endpoints = list(
             await self.db.scalars(
                 select(WebhookEndpoint).where(
@@ -1578,6 +1598,7 @@ class WebhookService:
             project_id=project_id,
             idempotency_key=idempotency_key,
             event_type=event_type,
+            envelope_mode=envelope_mode,
             payload=payload,
             payload_hash=fingerprint,
             canonical_envelope=canonical_envelope,
@@ -1599,6 +1620,7 @@ class WebhookService:
             raced_matches = (
                 raced
                 and raced.event_type == event_type
+                and raced.envelope_mode == envelope_mode
                 and raced.payload_hash == fingerprint
             )
             if raced_matches:

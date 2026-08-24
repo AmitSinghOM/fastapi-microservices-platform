@@ -11,3 +11,6 @@ htmlcov/
 .mypy_cache/
 .venv/
 venv/
+build/
+dist/
+*.egg-info/

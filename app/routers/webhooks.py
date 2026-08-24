@@ -545,7 +545,11 @@ async def ingest_event(
     service: WebhookService = Depends(get_webhook_service),
 ):
     return await service.ingest_event(
-        project, idempotency_key, body.type, body.payload
+        project,
+        idempotency_key,
+        body.type,
+        body.payload,
+        body.envelope_mode,
     )
 
 

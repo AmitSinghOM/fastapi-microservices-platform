@@ -357,20 +357,38 @@ are committed, pushed, and required hosted checks are green.
 **Purpose:** make the service easier to adopt than rebuilding webhook delivery.
 
 - [ ] Publish a Python producer SDK with an optional transactional outbox relay.
+      A tested, publishable package exists under `sdk/python`; package-index
+      publication remains pending.
 - [ ] Publish receiver helpers for raw-body signature verification, timestamp
-      tolerance, and event deduplication.
-- [ ] Keep the HTTP wire contract language-neutral.
-- [ ] Add CloudEvents-compatible envelopes as an optional compatibility mode.
-- [ ] Add a CLI for projects, endpoints, test events, attempts, and replay.
-- [ ] Provide example producer and receiver applications.
+      tolerance, and event deduplication. Tested helpers are included in the
+      pending Python package.
+- [x] Keep the HTTP wire contract language-neutral.
+- [x] Add CloudEvents-compatible envelopes as an optional compatibility mode.
+- [x] Add a CLI for projects, endpoints, test events, attempts, and replay.
+- [x] Provide example producer and receiver applications.
 - [ ] Target signed-event delivery within 30 minutes on a clean machine.
-- [ ] Add migration guides from custom workers and common queue patterns.
+- [x] Add migration guides from custom workers and common queue patterns.
 - [ ] Build only a minimal operational portal after API and CLI workflows are
       stable.
 
-**Completion gate:** at least eight of ten independent developers complete the
-installation and signed-delivery flow in under 30 minutes without maintainer
-help.
+**Phase 8 implementation evidence (2026-08-23):** `sdk/python` contains a
+producer with explicit timeouts and no implicit retries, safe bounded errors,
+raw-byte HMAC/timestamp verification, a durable deduplication protocol, a
+SQLAlchemy outbox that sends outside transactions with stable idempotency, and
+`webhookctl`. The additive `native|cloudevents` event mode preserves native
+bytes and signatures, while the CloudEvents mode emits structured 1.0 JSON and
+its media type. Language-neutral wire, adoption, and queue migration guides and
+minimal producer/receiver applications are included. The isolated wheel build,
+Ruff, mypy over 19 sources, compilation, seven SDK/CLI/outbox tests, 117 fast
+application tests, and the complete 128-test SQLite/PostgreSQL suite pass. A
+clean local PostgreSQL database upgraded through `0008`, reported no Alembic
+drift, downgraded to `0007`, and re-upgraded; the disposable database was then
+removed. Package-index publication and the independent usability study remain
+open; no portal work or Phase 9 work has begun.
+
+**Completion gate: open.** At least eight of ten independent developers must
+complete the clean-machine installation and signed-delivery flow in under 30
+minutes without maintainer help. Automated tests cannot satisfy this gate.
 
 ## Phase 9 — Production deployment guidance
 

@@ -79,6 +79,7 @@ class ClaimedDelivery:
     event_public_id: str
     event_type: str
     canonical_envelope: bytes
+    envelope_mode: str = "native"
     traceparent: str | None = None
     tracestate: str | None = None
     created_at: datetime = field(default_factory=utcnow)
@@ -177,6 +178,7 @@ class DeliveryService:
                             ),
                             event_public_id=delivery.event.public_id,
                             event_type=delivery.event.event_type,
+                            envelope_mode=delivery.event.envelope_mode,
                             canonical_envelope=bytes(
                                 delivery.event.canonical_envelope
                             ),
@@ -284,7 +286,11 @@ class DeliveryService:
                         claim.endpoint_url,
                         content=claim.canonical_envelope,
                         headers={
-                            "Content-Type": "application/json",
+                            "Content-Type": (
+                                "application/cloudevents+json"
+                                if claim.envelope_mode == "cloudevents"
+                                else "application/json"
+                            ),
                             "User-Agent": "webhook-platform/1.0",
                             "Webhook-Id": claim.event_public_id,
                             "Webhook-Timestamp": str(timestamp),

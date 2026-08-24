@@ -9,7 +9,10 @@ ORM = ConfigDict(extra="forbid", strict=True, from_attributes=True)
 OrganizationRole = Literal["owner", "admin", "member"]
 ProjectRole = Literal["admin", "operator", "viewer"]
 ApiKeyScope = Literal["events:write"]
+EnvelopeMode = Literal["native", "cloudevents"]
 Plan = Literal["free", "standard", "enterprise"]
+
+
 
 
 def default_api_key_scopes() -> list[ApiKeyScope]:
@@ -169,6 +172,7 @@ class EventCreate(BaseModel):
     model_config = STRICT
     type: str = Field(min_length=1, max_length=150)
     payload: Any
+    envelope_mode: EnvelopeMode = "native"
 
 
 class EventOut(BaseModel):
@@ -176,6 +180,7 @@ class EventOut(BaseModel):
     public_id: str
     idempotency_key: str
     event_type: str
+    envelope_mode: EnvelopeMode
     payload: Any | None
     payload_purged_at: datetime | None
     created_at: datetime

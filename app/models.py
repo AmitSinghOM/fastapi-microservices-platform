@@ -407,6 +407,10 @@ class Event(Base):
         UniqueConstraint(
             "project_id", "idempotency_key", name="uq_events_idempotency"
         ),
+        CheckConstraint(
+            "envelope_mode IN ('native', 'cloudevents')",
+            name="ck_events_envelope_mode",
+        ),
         Index("ix_events_project_created", "project_id", "created_at", "id"),
     )
 
@@ -419,6 +423,9 @@ class Event(Base):
     )
     idempotency_key = Column(String(255), nullable=False)
     event_type = Column(String(150), nullable=False)
+    envelope_mode = Column(
+        String(16), nullable=False, default="native", server_default="native"
+    )
     payload = Column(JSON, nullable=True)
     payload_hash = Column(String(64), nullable=False)
     canonical_envelope = Column(LargeBinary, nullable=True)

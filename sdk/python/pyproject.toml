@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools==75.6.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webhook-platform-sdk"
+version = "0.1.0"
+description = "Producer, receiver, outbox, and CLI tools for Webhook Platform"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [{name = "Webhook Platform contributors"}]
+dependencies = ["httpx==0.28.1"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+]
+
+[project.optional-dependencies]
+outbox = ["SQLAlchemy==2.0.36"]
+test = ["pytest==8.3.4", "SQLAlchemy==2.0.36"]
+
+[project.scripts]
+webhookctl = "webhook_platform_sdk.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

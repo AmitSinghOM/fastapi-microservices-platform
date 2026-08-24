@@ -239,6 +239,32 @@ responses, destinations, and credential material. See
 [the Phase 7 contract](docs/phase7-tenant-lifecycle.md) for the role matrix,
 rotation rules, deletion workflow, and encryption/key-management guidance.
 
+## Developer adoption
+
+A standalone Python package under `sdk/python` provides a synchronous producer,
+raw-byte receiver verification, a SQLAlchemy transactional outbox relay, and the
+`webhookctl` management CLI. It is currently installable from the repository;
+package-index publication remains pending the Phase 8 release gate.
+
+```bash
+python -m pip install './sdk/python[outbox]'
+export WEBHOOK_PLATFORM_TOKEN='<management bearer token>'
+webhookctl deliveries list --project <project-id>
+```
+
+Producer calls require a caller-supplied stable idempotency key and never retry
+implicitly. Receiver helpers verify timestamped HMAC signatures over exact body
+bytes before parsing and support a pluggable durable event-ID claim. Optional
+`cloudevents` mode emits CloudEvents 1.0 structured JSON while `native` remains
+the unchanged default. Runnable producer and durable-inbox receiver examples
+are under `examples/`.
+
+See [the wire protocol](docs/wire-protocol.md),
+[Phase 8 adoption guide](docs/phase8-adoption.md), and
+[migration guide](docs/migration-guide.md). The required independent-developer
+8/10 usability study is still open, so Phase 8 is not complete and Phase 9 has
+not started.
+
 ## Migrations, operations, and compatibility
 
 Apply schema changes before API rollout:
