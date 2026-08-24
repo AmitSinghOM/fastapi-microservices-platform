@@ -2,9 +2,9 @@
 
 ## Scope and security goals
 
-This model covers the FastAPI control plane, delivery worker, PostgreSQL queue,
-management JWTs, project API keys, endpoint signing secrets, persisted payloads,
-and outbound receiver traffic. It targets tenant isolation, durable queue
+This model covers the FastAPI control plane, optional same-origin operational
+portal, delivery worker, PostgreSQL queue, management JWTs, project API keys,
+endpoint signing secrets, persisted payloads, and outbound receiver traffic. It targets tenant isolation, durable queue
 integrity, credential confidentiality, authentic webhook delivery, and bounded
 egress. It does not claim that application URL checks alone form a production
 SSRF boundary.
@@ -19,7 +19,8 @@ SSRF boundary.
 
 ## Trust boundaries and actors
 
-1. Management clients cross the public API boundary using bearer JWTs.
+1. The browser portal and management clients cross the public API boundary
+   using bearer JWTs; the portal keeps its JWT only in page memory.
 2. Producers cross a separate ingestion boundary using project API keys.
 3. API and workers cross the database boundary with shared schema access.
 4. Workers cross DNS, proxy/firewall, Internet, and receiver boundaries.
@@ -38,12 +39,14 @@ compromised dependencies or workers, and operators making mistakes.
 - Production workers have a network-enforced egress policy; without it the
   deployment does not satisfy the SSRF security boundary.
 - Receivers implement signature timestamp checks and durable deduplication.
+
 ## Threats and current controls
 
 | Threat | Impact | Current controls | Residual work |
 | --- | --- | --- | --- |
 | Cross-tenant object access | Disclosure or modification | Organization/project role matrix; tenant-hiding `404`; visible denial `403` | Extend the matrix with every future management route |
 | API/JWT theft | Unauthorized ingestion or administration | Digests, peppers, revocation, bounded JWT life, scoped expiring API keys, overlap rotation, immutable audit | Add staged root/pepper rotation tooling |
+| Portal XSS or browser credential exposure | Administrative takeover or leaked one-time secrets | Same-origin external assets; strict CSP without inline/third-party code; text-only rendering; no bearer browser storage; password/API-key field clearing | A compromised browser, extension, host, or same-origin service remains trusted; operators must use HTTPS and avoid session recording |
 | Forged webhook | Receiver accepts attacker data | HMAC over timestamp and exact bytes; versioned secrets with bounded verification overlap | Receiver SDK in Phase 8 |
 | Replay or duplicate | Repeated business action | Stable event ID; documented at-least-once contract; shared quotas and audited replay | Receiver deduplication remains required |
 | Idempotency race | Duplicate event/fan-out | Unique constraint and conflict handling | Continue PostgreSQL stress coverage |
@@ -73,6 +76,8 @@ before broad multi-tenant production claims.
 - Outbound HTTP never occurs inside a database transaction.
 - A finalization requires the current processing state and matching lease token.
 - Plaintext API keys and signing secrets are returned only at creation/rotation.
+- The optional portal stores bearer tokens only in page memory and renders API
+  output through text nodes under a same-origin, no-inline-content CSP.
 - Secrets, authorization headers, complete payloads, and complete responses are
   never logged.
 - Automatic delivery remains at least once; duplicates are never presented as
@@ -85,6 +90,7 @@ before broad multi-tenant production claims.
   deletion without mutable foreign-key relationships.
 - Retention clears payload/response content only after policy age and terminal
   delivery checks; deletion-pending tenants accept no new mutations or events.
+
 ## Operational requirements
 
 Production deployments must use HTTPS, stable managed secrets, least-privilege

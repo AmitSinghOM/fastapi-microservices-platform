@@ -2,10 +2,11 @@
 
 ## Versioning
 
-The project uses Semantic Versioning. Until release automation is added,
-maintainers create signed `vMAJOR.MINOR.PATCH` tags from a green `main` commit
-and publish release notes with changes, migrations, security fixes, and known
-limitations.
+The project uses Semantic Versioning. Maintainers create signed
+`vMAJOR.MINOR.PATCH` application tags from a green `main` commit and publish
+release notes with changes, migrations, security fixes, and known limitations.
+The Python SDK uses independent signed `sdk-vMAJOR.MINOR.PATCH` tags whose
+version must match `sdk/python/pyproject.toml`.
 
 - Patch: compatible fixes and security updates.
 - Minor: backward-compatible features and deprecations.
@@ -26,6 +27,19 @@ The JWT `/users`, `/auth`, and tutorial `/items` APIs predate the webhook
 product. `/items` remains enabled by default in 3.x for compatibility and can be
 disabled with `EXAMPLE_ITEMS_ENABLED=false`. The default will become disabled
 in 4.0, with removal no earlier than 5.0.
+
+## Python SDK publication
+
+The `Publish Python SDK` workflow is manual and protected by the `pypi` GitHub
+environment. It verifies a signed SDK tag, confirms its commit is in `main`,
+checks package/tag version equality, builds and checks distributions, verifies
+the installed wheel and CLI in a clean virtual environment, then uses PyPI
+trusted publishing. Repository owners must configure the trusted publisher
+and environment approval before first use. Long-lived package-index tokens are
+not supported. Publishing is irreversible for a released filename/version, so
+fixes use a new SemVer version rather than replacing artifacts. See the
+[PyPI trusted publishing documentation](https://docs.pypi.org/trusted-publishers/using-a-publisher/).
+Internet-derived material was paraphrased for licensing compliance.
 
 ## Upgrade process
 

@@ -2,6 +2,7 @@
 
 from webhook_platform_sdk.producer import (
     ApiError,
+    AuthClient,
     ManagementClient,
     Producer,
     TransportError,
@@ -21,6 +22,7 @@ from webhook_platform_sdk.receiver import (
 
 __all__ = [
     "ApiError",
+    "AuthClient",
     "DuplicateEvent",
     "DurableDeduplicator",
     "InvalidSignature",

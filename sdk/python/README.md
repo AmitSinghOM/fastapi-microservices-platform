@@ -33,6 +33,11 @@ application transaction; the relay claims a bounded batch, commits, sends
 outside the transaction, and finalizes with a lease token. A crash can resend,
 so the relay always retains the same platform idempotency key.
 
-`webhookctl` reads management credentials from `WEBHOOK_PLATFORM_TOKEN` and
-producer credentials from `WEBHOOK_PLATFORM_API_KEY`. It does not accept secrets
-as command-line options, where they could be exposed by process listings.
+`webhookctl auth register` and `webhookctl auth login` prompt for passwords
+without placing them in process arguments. Login stores the bearer token in a
+mode-`0600` file bound to the service base URL; `WEBHOOK_PLATFORM_TOKEN` can
+override it for ephemeral environments. Organization, project, API-key, and
+endpoint commands cover initial setup. Producer credentials come only from
+`WEBHOOK_PLATFORM_API_KEY`. One-time API keys and endpoint secrets are printed
+only in their explicit creation responses and should be captured directly into
+a secret manager.

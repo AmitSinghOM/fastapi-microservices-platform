@@ -1,0 +1,67 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #f4f7fb;
+  color: #172033;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+header, main, footer { max-width: 1120px; margin: auto; padding: 1.5rem; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+h1, h2, p { margin-top: 0; }
+h1 { margin-bottom: .4rem; font-size: clamp(1.8rem, 5vw, 3rem); }
+h2 { font-size: 1.1rem; }
+.eyebrow { color: #3157b7; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+
+section, form, #status {
+  background: #fff;
+  border: 1px solid #dce3ef;
+  border-radius: .75rem;
+  padding: 1rem;
+}
+
+section { margin-bottom: 1rem; }
+section form { border: 0; padding: 0; margin: 0; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.row { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
+.result-heading { justify-content: space-between; align-items: center; }
+
+label { display: grid; gap: .35rem; margin-bottom: .8rem; font-weight: 600; flex: 1; }
+input, select, textarea, button {
+  border: 1px solid #9aabc3;
+  border-radius: .4rem;
+  font: inherit;
+  padding: .65rem .75rem;
+}
+
+input, select, textarea { background: #fff; color: #172033; width: 100%; }
+textarea { resize: vertical; }
+button { background: #3157b7; border-color: #3157b7; color: #fff; cursor: pointer; font-weight: 700; }
+button:hover { background: #23458f; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid #9eb8ff;
+  outline-offset: 2px;
+}
+#status { border-left: 5px solid #3157b7; }
+#status.error { border-left-color: #a82626; color: #861e1e; }
+.hint, .warning, footer { color: #56627a; font-size: .9rem; }
+.warning { border-left: 4px solid #d49600; padding-left: .75rem; }
+pre {
+  background: #101827;
+  border-radius: .5rem;
+  color: #e7edf8;
+  max-height: 28rem;
+  overflow: auto;
+  padding: 1rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+[hidden] { display: none !important; }
+
+@media (max-width: 720px) {
+  .grid { grid-template-columns: 1fr; }
+  header { align-items: flex-start; }
+}

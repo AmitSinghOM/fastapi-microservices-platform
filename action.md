@@ -368,7 +368,7 @@ are committed, pushed, and required hosted checks are green.
 - [x] Provide example producer and receiver applications.
 - [ ] Target signed-event delivery within 30 minutes on a clean machine.
 - [x] Add migration guides from custom workers and common queue patterns.
-- [ ] Build only a minimal operational portal after API and CLI workflows are
+- [x] Build only a minimal operational portal after API and CLI workflows are
       stable.
 
 **Phase 8 implementation evidence (2026-08-23):** `sdk/python` contains a
@@ -385,6 +385,47 @@ clean local PostgreSQL database upgraded through `0008`, reported no Alembic
 drift, downgraded to `0007`, and re-upgraded; the disposable database was then
 removed. Package-index publication and the independent usability study remain
 open; no portal work or Phase 9 work has begun.
+
+**Phase 8 onboarding hardening evidence (2026-08-24):** `webhookctl` now
+supports password-prompted registration/login plus organization and producer-key
+setup. Login persists only the bearer token in an atomic mode-`0600`,
+base-URL-bound credential file; environment tokens remain available for
+ephemeral sessions. The manual `Publish Python SDK` workflow accepts only signed
+version-matching SDK tags contained in `main`, uses pinned actions, a protected
+`pypi` environment, and OpenID Connect trusted publishing without a long-lived
+package token. `docs/phase8-usability-study.md` and its local recorder define
+pseudonymous, timezone-aware, no-help evidence and enforce the strict 8-of-10,
+under-30-minute gate without claiming human results.
+
+The hardened local gate passes 120 fast application tests and 12 SDK tests,
+Ruff, mypy over 20 sources, compilation, diagnostics, an isolated wheel build,
+and the release-equivalent source/wheel build plus Twine inspection. The live
+PostgreSQL suite was not repeated because this follow-up changes no database,
+queue, migration, or delivery behavior. No package was published, no release
+tag was created, and no usability participant result has been recorded.
+
+**Phase 8 portal evidence (2026-08-24):** The optional dependency-free portal at
+`/portal` covers registration/login, organization/project setup, one-time
+producer-key and endpoint creation, test-event ingestion, delivery inspection,
+and single replay. It performs same-origin requests, keeps the bearer token only
+in page memory, clears password and producer-key fields, renders API output only
+as text, loads no third-party assets, and applies a no-inline strict CSP. The
+threat model documents residual browser/extension/host risk, and operators can
+disable the surface with `PORTAL_ENABLED=false`. The focused portal route/header
+test, JavaScript syntax check, diagnostics, Ruff, mypy, compilation, 121 fast
+application tests, and 12 SDK tests pass. Package publication and the independent
+human study remain open; no Phase 9 work has begun.
+
+**Phase 8 evidence-integrity and release-readiness evidence (2026-08-24):** The
+study recorder now writes atomic mode-`0600` files, refuses unsafe file types and
+permissions, validates strict row schemas, recomputes timezone-aware durations,
+and preserves the prior file when a duplicate record is rejected. The protected
+SDK release workflow now installs the built wheel in a clean virtual environment
+and exercises public imports and the `webhookctl` entry point before publishing.
+The same isolated wheel installation and CLI smoke check pass locally, as do
+Ruff, mypy, compilation, diagnostics, 123 fast application tests, 12 SDK tests,
+and `git diff --check`. No package was published and no participant evidence was
+created or inferred.
 
 **Completion gate: open.** At least eight of ten independent developers must
 complete the clean-machine installation and signed-delivery flow in under 30

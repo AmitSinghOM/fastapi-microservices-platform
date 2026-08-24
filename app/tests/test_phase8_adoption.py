@@ -113,3 +113,22 @@ async def test_cloudevents_delivery_uses_structured_media_type(
     assert requests[0].headers["Content-Type"] == (
         "application/cloudevents+json"
     )
+
+
+@pytest.mark.asyncio
+async def test_portal_assets_are_same_origin_and_csp_guarded(
+    client: AsyncClient,
+):
+    page = await client.get("/portal")
+    script = await client.get("/portal/app.js")
+    styles = await client.get("/portal/styles.css")
+
+    assert page.status_code == script.status_code == styles.status_code == 200
+    assert page.headers["cache-control"] == "no-store"
+    policy = page.headers["content-security-policy"]
+    assert "default-src 'none'" in policy
+    assert "connect-src 'self'" in policy
+    assert "'unsafe-inline'" not in policy
+    assert 'src="/portal/app.js"' in page.text
+    assert "localStorage" not in script.text
+    assert "sessionStorage" not in script.text

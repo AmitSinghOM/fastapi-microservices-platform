@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     )
     debug: bool = False
     docs_enabled: bool = True
+    portal_enabled: bool = True
     example_items_enabled: bool = True
     database_url: str = "sqlite+aiosqlite:///./app.db"
     auto_create_schema: bool = True

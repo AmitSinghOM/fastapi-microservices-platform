@@ -71,7 +71,9 @@ jobs:
       - name: Type check
         run: mypy
       - name: Compile
-        run: python -m compileall -q app migrations scripts
+        run: python -m compileall -q app migrations scripts sdk/python/src examples
+      - name: Test SDK and CLI behavior
+        run: PYTHONPATH=sdk/python/src pytest sdk/python/tests -q
       - name: Test SQLite and PostgreSQL behavior
         run: pytest app/tests -q
       - name: Apply and verify migrations

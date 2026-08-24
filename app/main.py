@@ -20,6 +20,7 @@ from app.middleware import RateLimitMiddleware, RequestContextMiddleware
 from app.routers import (
     auth_router,
     items_router,
+    portal_router,
     users_router,
     webhooks_router,
 )
@@ -108,6 +109,8 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(users_router)
+    if settings.portal_enabled:
+        app.include_router(portal_router)
     if settings.example_items_enabled:
         app.include_router(items_router)
     app.include_router(webhooks_router)
@@ -118,6 +121,7 @@ def create_app() -> FastAPI:
             "name": settings.app_name,
             "version": settings.app_version,
             "docs": "/docs" if settings.docs_enabled else "disabled",
+            "portal": "/portal" if settings.portal_enabled else "disabled",
             "health": "/readyz",
         }
 

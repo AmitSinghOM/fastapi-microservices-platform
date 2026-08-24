@@ -78,15 +78,21 @@ attempt count, and relay errors without logging payloads or credentials.
 
 ## CLI
 
-Management commands read `WEBHOOK_PLATFORM_TOKEN`; test-event commands read
+`webhookctl auth login` prompts for the password without accepting it on the
+command line, then stores the bearer token in a mode-`0600` credential file
+bound to the configured base URL. Set `WEBHOOK_PLATFORM_CREDENTIALS` to choose
+a different path. `WEBHOOK_PLATFORM_TOKEN` overrides the file for ephemeral
+sessions, and test-event commands continue to read
 `WEBHOOK_PLATFORM_API_KEY`. Secrets are deliberately not accepted as command
 arguments.
 
 ```bash
 export WEBHOOK_PLATFORM_URL=http://localhost:8000
-export WEBHOOK_PLATFORM_TOKEN='<bearer token>'
-webhookctl projects list --organization <organization-id>
+webhookctl auth register --email owner@example.com --name Owner
+webhookctl auth login --email owner@example.com
+webhookctl organizations create --name Example
 webhookctl projects create --organization <organization-id> --name Events
+webhookctl api-keys create --project <project-id> --name producer
 webhookctl endpoints create --project <project-id> --url https://receiver.example/webhooks
 webhookctl deliveries list --project <project-id>
 webhookctl deliveries attempts --project <project-id> --delivery <delivery-id>
@@ -97,18 +103,60 @@ export WEBHOOK_PLATFORM_API_KEY='<producer key>'
 webhookctl events send --type test.event --idempotency-key test-42 --payload-file payload.json
 ```
 
-Endpoint creation intentionally prints the one-time signing secret to standard
-output. Capture it directly into a secret manager and avoid terminal/session
-recording. Other errors contain only bounded status and error codes.
+Endpoint and API-key creation intentionally print their one-time secrets to
+standard output. Capture them directly into a secret manager and avoid
+terminal/session recording. Other errors contain only bounded status and error
+codes.
+
+## Minimal operational portal
+
+`PORTAL_ENABLED=true` serves a dependency-free same-origin interface at
+`/portal`. It covers registration/login, organization and project setup,
+producer-key and endpoint creation, test events, delivery inspection, and
+single-delivery replay. Advanced membership, policy, retention, export, and bulk
+operations intentionally remain API/CLI workflows.
+
+The portal does not use cookies, `localStorage`, or `sessionStorage`. Its bearer
+token exists only in JavaScript memory and is cleared by logout or page refresh.
+Passwords and pasted producer keys are cleared after use. All content is rendered
+with text nodes, assets are same-origin, and the document applies a strict CSP
+without inline code or third-party origins. This reduces persistence and XSS
+exposure but cannot protect credentials from a compromised browser, extension,
+host, or same-origin application. Deploy the portal only behind trusted HTTPS;
+set `PORTAL_ENABLED=false` when operators do not need it.
+
+Creation results intentionally display one-time API keys and endpoint signing
+secrets. Move each secret directly into a secret manager and clear the result
+panel; avoid browser, terminal, and session recording during setup.
+
+## Package publication preparation
+
+`.github/workflows/python-sdk-release.yml` is manual, accepts only a signed
+`sdk-vMAJOR.MINOR.PATCH` tag whose commit is contained in `origin/main`, verifies
+that the tag matches package metadata, builds and checks both distributions,
+installs the wheel into a clean virtual environment, exercises public imports
+and `webhookctl`, and only then publishes through PyPI OpenID Connect. The
+`pypi` GitHub environment should require maintainer approval.
+
+Before first publication, an owner must configure a pending PyPI trusted
+publisher for project `webhook-platform-sdk`, this repository, workflow
+`python-sdk-release.yml`, and environment `pypi`. Then create and push a signed
+SDK tag from a green main commit and manually dispatch the workflow with that
+exact tag. Do not configure a long-lived PyPI API token.
+
+Publication is intentionally not automatic and has not been performed. See
+[PyPI trusted publisher setup](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
+and [publisher usage](https://docs.pypi.org/trusted-publishers/using-a-publisher/).
+Internet-derived material was paraphrased for licensing compliance.
 
 ## External completion gate
 
-Automated checks cannot satisfy the phase completion gate. Recruit ten
-developers who did not implement the feature. On a clean machine, provide only
-the public setup documentation and measure from start until a receiver has
-durably accepted a correctly signed event. Record completion time, help needed,
-failed step, operating system, Python version, and documentation feedback.
+Automated checks cannot satisfy the phase completion gate. Follow
+[the independent study protocol](phase8-usability-study.md) with ten developers
+who did not implement the feature. The recorder enforces pseudonymous IDs,
+timezone-aware durations, strict under-30-minute timing, no-help qualification,
+and the 8/10 aggregate threshold without storing credentials or payloads.
 
 Phase 8 passes only when at least eight of ten finish in under 30 minutes without
-maintainer help. Until then, package publication, the 30-minute target, minimal
-portal decision, and the phase gate remain open; Phase 9 must not begin.
+maintainer help. Until then, package publication, the 30-minute target, and the
+phase gate remain open; Phase 9 must not begin.

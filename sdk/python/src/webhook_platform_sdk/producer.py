@@ -91,6 +91,7 @@ class _JsonClient:
         path: str,
         *,
         json: object | None = None,
+        data: Mapping[str, str] | None = None,
         headers: Mapping[str, str] | None = None,
         params: Mapping[str, QueryValue] | None = None,
     ) -> Any:
@@ -100,6 +101,7 @@ class _JsonClient:
                 method,
                 path,
                 json=json,
+                data=data,
                 headers=request_headers,
                 params=params,
             )
@@ -113,6 +115,47 @@ class _JsonClient:
             return response.json()
         except ValueError as exc:
             raise ApiError(response.status_code, "INVALID_RESPONSE") from exc
+
+
+class AuthClient(_JsonClient):
+    """Register users and exchange passwords without retaining credentials."""
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout: httpx.Timeout | float | None = None,
+        client: httpx.Client | None = None,
+    ) -> None:
+        super().__init__(
+            base_url,
+            {"User-Agent": "webhook-platform-python/0.1"},
+            timeout=timeout,
+            client=client,
+        )
+
+    def register(
+        self, email: str, name: str, password: str
+    ) -> dict[str, Any]:
+        result = self._request(
+            "POST",
+            "/users/",
+            json={"email": email, "name": name, "password": password},
+        )
+        if not isinstance(result, dict):
+            raise ApiError(201, "INVALID_RESPONSE")
+        return result
+
+    def login(self, email: str, password: str) -> str:
+        result = self._request(
+            "POST",
+            "/auth/login",
+            data={"username": email, "password": password},
+        )
+        token = result.get("access_token") if isinstance(result, dict) else None
+        if not isinstance(token, str) or not token:
+            raise ApiError(200, "INVALID_RESPONSE")
+        return token
 
 
 class Producer(_JsonClient):
@@ -191,6 +234,12 @@ class ManagementClient(_JsonClient):
             client=client,
         )
 
+    def list_organizations(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/v1/organizations")
+
+    def create_organization(self, name: str) -> dict[str, Any]:
+        return self._request("POST", "/v1/organizations", json={"name": name})
+
     def list_projects(self, organization_id: str) -> list[dict[str, Any]]:
         return self._request(
             "GET", f"/v1/organizations/{organization_id}/projects"
@@ -203,6 +252,33 @@ class ManagementClient(_JsonClient):
             "POST",
             f"/v1/organizations/{organization_id}/projects",
             json={"name": name},
+        )
+
+    def list_api_keys(self, project_id: str) -> list[dict[str, Any]]:
+        return self._request("GET", f"/v1/projects/{project_id}/api-keys")
+
+    def create_api_key(
+        self,
+        project_id: str,
+        name: str,
+        *,
+        expires_in_days: int | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/v1/projects/{project_id}/api-keys",
+            json={
+                "name": name,
+                "scopes": ["events:write"],
+                "expires_in_days": expires_in_days,
+            },
+        )
+
+    def revoke_api_key(
+        self, project_id: str, api_key_id: str
+    ) -> dict[str, Any]:
+        return self._request(
+            "DELETE", f"/v1/projects/{project_id}/api-keys/{api_key_id}"
         )
 
     def list_endpoints(self, project_id: str) -> list[dict[str, Any]]:

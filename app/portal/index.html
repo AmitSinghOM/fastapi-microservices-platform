@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Webhook Platform Portal</title>
+  <link rel="stylesheet" href="/portal/styles.css">
+  <script src="/portal/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">Webhook Platform</p>
+      <h1>Operational portal</h1>
+      <p>Configure a project, send a signed event, and inspect delivery.</p>
+    </div>
+    <button id="logout" type="button" disabled>Log out</button>
+  </header>
+
+  <main>
+    <p id="status" role="status" aria-live="polite">Log in to begin.</p>
+
+    <section class="grid" aria-label="Account access">
+      <form id="register-form">
+        <h2>Register</h2>
+        <label>Email <input name="email" type="email" required></label>
+        <label>Name <input name="name" required maxlength="120"></label>
+        <label>Password <input name="password" type="password" required></label>
+        <label>Confirm password
+          <input name="confirmation" type="password" required>
+        </label>
+        <button>Register</button>
+      </form>
+      <form id="login-form">
+        <h2>Log in</h2>
+        <label>Email <input name="email" type="email" required></label>
+        <label>Password <input name="password" type="password" required></label>
+        <button>Log in</button>
+        <p class="hint">The bearer token stays in memory and is lost on refresh.</p>
+      </form>
+    </section>
+
+    <div id="operations" hidden>
+      <section>
+        <h2>1. Organization</h2>
+        <div class="row">
+          <label>Organization <select id="organization"></select></label>
+          <button id="organizations-refresh" type="button">Refresh</button>
+        </div>
+        <form id="organization-form" class="row">
+          <label>Name <input name="name" required maxlength="120"></label>
+          <button>Create organization</button>
+        </form>
+      </section>
+      <section>
+        <h2>2. Project</h2>
+        <div class="row">
+          <label>Project <select id="project"></select></label>
+          <button id="projects-refresh" type="button">Refresh</button>
+        </div>
+        <form id="project-form" class="row">
+          <label>Name <input name="name" required maxlength="120"></label>
+          <button>Create project</button>
+        </form>
+      </section>
+
+      <section class="grid">
+        <form id="api-key-form">
+          <h2>3. Producer key</h2>
+          <label>Name <input name="name" required maxlength="120"></label>
+          <label>Expires in days
+            <input name="expires" type="number" min="1" max="3650" value="90">
+          </label>
+          <button>Create key</button>
+        </form>
+        <form id="endpoint-form">
+          <h2>4. Endpoint</h2>
+          <label>HTTPS URL <input name="url" type="url" required></label>
+          <label>Description <input name="description" maxlength="500"></label>
+          <button>Create endpoint</button>
+        </form>
+      </section>
+
+      <section class="grid">
+        <form id="event-form">
+          <h2>5. Test event</h2>
+          <label>Producer API key
+            <input name="api_key" type="password" autocomplete="off" required>
+          </label>
+          <label>Type <input name="type" value="test.event" required></label>
+          <label>Idempotency key <input name="idempotency_key" required></label>
+          <label>JSON payload
+            <textarea name="payload" rows="5" required>{"message":"hello"}</textarea>
+          </label>
+          <button>Send event</button>
+        </form>
+        <div>
+          <h2>6. Deliveries</h2>
+          <button id="deliveries-refresh" type="button">List deliveries</button>
+          <form id="delivery-form">
+            <label>Delivery ID <input name="delivery_id" required></label>
+            <div class="row">
+              <button name="operation" value="inspect">Inspect attempts</button>
+              <button name="operation" value="replay">Replay</button>
+            </div>
+          </form>
+        </div>
+      </section>
+      <section aria-labelledby="result-title">
+        <div class="row result-heading">
+          <h2 id="result-title">Latest result</h2>
+          <button id="result-clear" type="button">Clear</button>
+        </div>
+        <p class="warning">
+          Key and endpoint creation responses contain one-time secrets. Move
+          them to a secret manager, then clear this panel.
+        </p>
+        <pre id="result" tabindex="0">No operation yet.</pre>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    Minimal same-origin interface. Advanced tenant and retention operations
+    remain available through the API and CLI.
+  </footer>
+</body>
+</html>

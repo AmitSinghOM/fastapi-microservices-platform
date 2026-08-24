@@ -248,7 +248,8 @@ package-index publication remains pending the Phase 8 release gate.
 
 ```bash
 python -m pip install './sdk/python[outbox]'
-export WEBHOOK_PLATFORM_TOKEN='<management bearer token>'
+webhookctl auth login --email owner@example.com
+webhookctl organizations list
 webhookctl deliveries list --project <project-id>
 ```
 
@@ -256,11 +257,15 @@ Producer calls require a caller-supplied stable idempotency key and never retry
 implicitly. Receiver helpers verify timestamped HMAC signatures over exact body
 bytes before parsing and support a pluggable durable event-ID claim. Optional
 `cloudevents` mode emits CloudEvents 1.0 structured JSON while `native` remains
-the unchanged default. Runnable producer and durable-inbox receiver examples
-are under `examples/`.
+the unchanged default. Runnable producer and durable-inbox receiver examples are under `examples/`.
+The dependency-free same-origin portal at `/portal` supports initial setup,
+test events, delivery inspection, and replay without persisting bearer tokens
+in browser storage. Disable it with `PORTAL_ENABLED=false` when operators use
+only the API and CLI.
 
 See [the wire protocol](docs/wire-protocol.md),
-[Phase 8 adoption guide](docs/phase8-adoption.md), and
+[Phase 8 adoption guide](docs/phase8-adoption.md),
+[independent usability study](docs/phase8-usability-study.md), and
 [migration guide](docs/migration-guide.md). The required independent-developer
 8/10 usability study is still open, so Phase 8 is not complete and Phase 9 has
 not started.
@@ -282,8 +287,10 @@ endpoint admission state. Revision `0005` backfills dead-letter reasons and
 endpoint retry/circuit state, and creates replay audit records. Revision
 `0006` adds bounded W3C trace context to accepted events. Revision `0007`
 adds role assignments, scoped key and endpoint-secret lifecycles, immutable
-audit history, retention policy, and organization cleanup state. Set
-`AUTO_CREATE_SCHEMA=false` in staging/production;
+audit history, retention policy, and organization cleanup state. Revision
+`0008` adds an immutable `native|cloudevents` envelope selector and refuses an
+unsafe downgrade while CloudEvents rows exist. Set `AUTO_CREATE_SCHEMA=false`
+in staging/production;
 those environments reject local schema auto-creation and require all three
 secrets at 32+ characters. Configuration includes multiplied replica/database
 connection budgets, shared admission and worker concurrency limits, an explicit
