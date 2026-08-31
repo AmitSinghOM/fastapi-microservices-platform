@@ -80,5 +80,7 @@ in access-controlled project evidence and publish only non-sensitive aggregate
 counts.
 
 Package-index publication and a portal are not substitutes for this evidence.
-Phase 9 remains blocked until the measured report passes and required hosted
-checks for the final Phase 8 commit are green.
+Follow the ordered [external-gate runbook](phase8-external-gates.md) for
+candidate freeze, owner signing, remote controls, cohort execution, TestPyPI
+cooling-off, and production release. Phase 9 remains blocked until the measured
+report passes and required hosted checks for the final Phase 8 commit are green.

@@ -1,10 +1,10 @@
-name: Publish Python SDK
+name: Publish Python SDK to TestPyPI
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Signed sdk-vMAJOR.MINOR.PATCH tag already released to TestPyPI
+        description: Signed sdk-vMAJOR.MINOR.PATCH tag to test
         required: true
         type: string
 
@@ -14,14 +14,14 @@ permissions:
   id-token: write
 
 concurrency:
-  group: python-sdk-publish
+  group: python-sdk-test-publish
   cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: pypi
+    environment: testpypi
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -91,63 +91,60 @@ jobs:
             exit 1
           fi
           echo "RELEASE_COMMIT=$RELEASE_COMMIT" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
-      - name: Retrieve successful TestPyPI workflow manifest
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")" >> "$GITHUB_ENV"
+      - name: Restore an earlier identical release candidate when available
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.tag }}
         run: |
           RUNS=$(gh api --method GET \
             "repos/$GITHUB_REPOSITORY/actions/workflows/python-sdk-test-release.yml/runs" \
             -f "event=workflow_dispatch" \
-            -f "status=success" \
             -f "per_page=100")
-          TEST_RUN_ID=$(printf '%s' "$RUNS" | jq -r \
+          RUN_IDS=$(printf '%s' "$RUNS" | jq -r \
             --arg sha "$RELEASE_COMMIT" \
             --arg branch "$RELEASE_TAG" \
-            '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch)] | sort_by(.created_at) | last | .id // empty')
-          if [[ -z "$TEST_RUN_ID" ]]; then
-            echo "No successful TestPyPI workflow exists for this tag and commit" >&2
-            exit 1
-          fi
-          ARTIFACTS=$(gh api \
-            "repos/$GITHUB_REPOSITORY/actions/runs/$TEST_RUN_ID/artifacts")
+            --argjson current "$GITHUB_RUN_ID" \
+            '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch and .id != $current)] | sort_by(.created_at) | reverse | .[].id')
           ARTIFACT_NAME="${RELEASE_TAG}-candidate"
-          ARTIFACT_COUNT=$(printf '%s' "$ARTIFACTS" | jq \
-            --arg name "$ARTIFACT_NAME" \
-            '[.artifacts[] | select(.name == $name and .expired == false)] | length')
-          if [[ "$ARTIFACT_COUNT" != "1" ]]; then
-            echo "Expected exactly one retained TestPyPI candidate artifact" >&2
-            exit 1
-          fi
-          ARTIFACT_ID=$(printf '%s' "$ARTIFACTS" | jq -r \
-            --arg name "$ARTIFACT_NAME" \
-            '.artifacts[] | select(.name == $name and .expired == false) | .id')
-          gh api \
-            "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
-            > "$RUNNER_TEMP/testpypi-manifest.zip"
-          unzip -p "$RUNNER_TEMP/testpypi-manifest.zip" SHA256SUMS \
-            > sdk/python/TESTPYPI_SHA256SUMS
-          test -s sdk/python/TESTPYPI_SHA256SUMS
-      - name: Download approved cooled TestPyPI artifacts
+          for RUN_ID in $RUN_IDS; do
+            ARTIFACTS=$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts")
+            ARTIFACT_ID=$(printf '%s' "$ARTIFACTS" | jq -r \
+              --arg name "$ARTIFACT_NAME" \
+              '[.artifacts[] | select(.name == $name and .expired == false)] | first | .id // empty')
+            if [[ -n "$ARTIFACT_ID" ]]; then
+              gh api \
+                "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
+                > "$RUNNER_TEMP/release-candidate.zip"
+              unzip -q "$RUNNER_TEMP/release-candidate.zip" -d sdk/python
+              echo "RESTORED_RELEASE_CANDIDATE=true" >> "$GITHUB_ENV"
+              echo "Restored candidate artifacts from workflow run $RUN_ID"
+              break
+            fi
+          done
+      - name: Build and hash new distributions
+        if: env.RESTORED_RELEASE_CANDIDATE != 'true'
         run: |
-          python scripts/release_registry.py download \
-            --repository testpypi \
-            --version "$RELEASE_VERSION" \
-            --manifest sdk/python/TESTPYPI_SHA256SUMS \
-            --dist-dir sdk/python/dist \
-            --minimum-age-hours 24
-      - name: Inspect and hash promoted distributions
+          python -m pip install build==1.2.2.post1
+          python -m build sdk/python
+          (
+            cd sdk/python/dist
+            sha256sum -- *.whl *.tar.gz > ../SHA256SUMS
+          )
+      - name: Inspect and verify release candidate
         run: |
           python -m pip install twine==6.0.1
           python -m twine check sdk/python/dist/*
           (
             cd sdk/python/dist
-            sha256sum -- *.whl *.tar.gz > ../SHA256SUMS
             sha256sum --check ../SHA256SUMS
-            cmp ../SHA256SUMS ../TESTPYPI_SHA256SUMS
-            cat ../SHA256SUMS
+            sha256sum -- *.whl *.tar.gz > ../CURRENT_SHA256SUMS
           )
+          cmp sdk/python/SHA256SUMS sdk/python/CURRENT_SHA256SUMS
+          rm sdk/python/CURRENT_SHA256SUMS
+          cat sdk/python/SHA256SUMS
       - name: Verify clean wheel installation
         env:
           PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -158,29 +155,32 @@ jobs:
           "$RUNNER_TEMP/sdk-smoke/bin/python" -c \
             "from webhook_platform_sdk import AuthClient, Producer, verify_request"
           "$RUNNER_TEMP/sdk-smoke/bin/webhookctl" --help >/dev/null
-      - name: Retain production hash manifest
+      - name: Retain release candidate for retry recovery
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: ${{ inputs.tag }}-pypi-sha256
-          path: sdk/python/SHA256SUMS
+          name: ${{ inputs.tag }}-candidate
+          path: |
+            sdk/python/dist/*
+            sdk/python/SHA256SUMS
           if-no-files-found: error
           retention-days: 90
-      - name: Verify PyPI retry state
+      - name: Verify TestPyPI retry state
         run: |
           python scripts/release_registry.py preflight \
-            --repository pypi \
+            --repository testpypi \
             --version "$RELEASE_VERSION" \
             --dist-dir sdk/python/dist
-      - name: Publish with PyPI trusted publishing
+      - name: Publish with TestPyPI trusted publishing
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
+          repository-url: https://test.pypi.org/legacy/
           packages-dir: sdk/python/dist/
           skip-existing: true
           verbose: false
-      - name: Verify complete PyPI release
+      - name: Verify complete TestPyPI release
         run: |
           python scripts/release_registry.py wait \
-            --repository pypi \
+            --repository testpypi \
             --version "$RELEASE_VERSION" \
             --dist-dir sdk/python/dist \
             --timeout-seconds 120

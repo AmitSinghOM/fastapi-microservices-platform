@@ -1,8 +1,9 @@
-# Webhook Platform Python SDK
+# FastAPI Microservices Platform Python SDK
 
-The package provides a synchronous producer, control-plane client, raw-byte
-receiver verification, a SQLAlchemy transactional outbox, and `webhookctl`.
-Python 3.11+ is required.
+The `fastapi-microservices-platform-sdk` distribution provides a synchronous
+producer, control-plane client, raw-byte receiver verification, a SQLAlchemy
+transactional outbox, and `webhookctl`. Its Python import remains
+`webhook_platform_sdk`. Python 3.11+ is required.
 
 ```bash
 python -m pip install .
@@ -38,6 +39,5 @@ without placing them in process arguments. Login stores the bearer token in a
 mode-`0600` file bound to the service base URL; `WEBHOOK_PLATFORM_TOKEN` can
 override it for ephemeral environments. Organization, project, API-key, and
 endpoint commands cover initial setup. Producer credentials come only from
-`WEBHOOK_PLATFORM_API_KEY`. One-time API keys and endpoint secrets are printed
-only in their explicit creation responses and should be captured directly into
-a secret manager.
+`WEBHOOK_PLATFORM_API_KEY`. Capture one-time API keys and endpoint secrets
+directly into a secret manager.

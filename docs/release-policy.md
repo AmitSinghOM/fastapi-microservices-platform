@@ -30,16 +30,51 @@ in 4.0, with removal no earlier than 5.0.
 
 ## Python SDK publication
 
-The `Publish Python SDK` workflow is manual and protected by the `pypi` GitHub
-environment. It verifies a signed SDK tag, confirms its commit is in `main`,
-checks package/tag version equality, builds and checks distributions, verifies
-the installed wheel and CLI in a clean virtual environment, then uses PyPI
-trusted publishing. Repository owners must configure the trusted publisher
-and environment approval before first use. Long-lived package-index tokens are
-not supported. Publishing is irreversible for a released filename/version, so
-fixes use a new SemVer version rather than replacing artifacts. See the
-[PyPI trusted publishing documentation](https://docs.pypi.org/trusted-publishers/using-a-publisher/).
-Internet-derived material was paraphrased for licensing compliance.
+FastAPI Microservices Platform is currently maintained and released by a single
+repository owner. Releases use a signed final candidate commit and signed tag,
+protected branches and tags, exact-commit CI verification, explicit exact-SHA
+Container evidence, PyPI trusted publishing, protected deployment environments,
+and a mandatory cooling-off period. Independent approval is not currently
+guaranteed.
+
+The owner first dispatches `Publish Python SDK to TestPyPI` for a signed
+`sdk-vMAJOR.MINOR.PATCH` tag. The workflow verifies the tag, tagged version,
+`main` containment, and successful exact-commit CI; builds from a clean
+checkout; records and verifies SHA-256 hashes; retains the exact wheel, source
+archive, and manifest as one GitHub artifact; smoke-tests the installed wheel;
+and preflights TestPyPI before OIDC publication. A retry restores those original
+bytes instead of rebuilding the non-reproducible source archive. Existing files
+are skipped only after their names, hashes,
+sizes, yanked state, and URLs match; bounded post-publication polling requires
+the exact complete release. This makes retries repair a matching partial upload
+and reject conflicting registry state.
+
+Production dispatch is blocked until those TestPyPI artifacts have cooled for
+at least 24 hours. The production workflow repeats source and CI checks, selects
+a successful TestPyPI workflow run for the exact tag and commit, and retrieves
+its retained manifest. It downloads only expected non-yanked files from the
+official TestPyPI artifact host, verifies reported/downloaded sizes and
+manifest/API/download SHA-256 values, smoke-tests the promoted wheel, then
+applies the same preflight, idempotent upload, and bounded completion check to
+PyPI through the protected `pypi` environment.
+
+Before first use, configure separate `testpypi` and `pypi` environments and
+trusted publishers. Restrict both environments to `sdk-v*` tags, disable
+administrator bypass where supported, and configure a 24-hour wait timer on
+`pypi`. GitHub workflow YAML cannot create those environment settings.
+Configure and prove signing before creating the final candidate commit; enable
+repository-wide signed-commit enforcement only after the sole owner has tested
+the complete signing path. Long-lived package-index tokens are not supported,
+and released filenames or versions are never replaced.
+
+Production publication also remains blocked until the independent Phase 8
+usability study passes its documented 8-of-10 gate. That study is product
+evidence, not a second release-approver requirement. The owner must follow the
+[SDK release checklist](sdk-release-checklist.md) and
+[Phase 8 external-gate runbook](phase8-external-gates.md), including review from
+a second authenticated device or session. This guidance summarizes the linked
+[PyPI trusted publishing documentation](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
+instead of reproducing it.
 
 ## Upgrade process
 

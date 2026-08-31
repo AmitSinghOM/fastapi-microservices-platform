@@ -1,8 +1,15 @@
-# FastAPI Webhook Delivery Platform
+# FastAPI Microservices Platform
 
 [![CI](https://github.com/AmitSinghOM/fastapi-microservices-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/AmitSinghOM/fastapi-microservices-platform/actions/workflows/ci.yml)
 
-An async webhook control plane and separately runnable delivery worker. Existing
+A production-oriented FastAPI and PostgreSQL platform for durable, multi-tenant
+event delivery without requiring Redis or Kafka. PostgreSQL provides
+transactional state, delivery scheduling, fairness, retries, dead-letter
+operations, and lifecycle management. The repository includes a Python SDK,
+CLI, operational portal, and independently scalable API and worker runtimes.
+
+Additional brokers are deliberately deferred until measured throughput,
+isolation, or retention requirements justify their operational cost. Existing
 JWT users and owned-item APIs remain available; webhook ingestion uses project
 API keys and organization membership is the management authorization boundary.
 

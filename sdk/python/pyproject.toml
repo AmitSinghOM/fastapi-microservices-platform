@@ -3,18 +3,23 @@ requires = ["setuptools==75.6.0", "wheel==0.45.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "webhook-platform-sdk"
+name = "fastapi-microservices-platform-sdk"
 version = "0.1.0"
-description = "Producer, receiver, outbox, and CLI tools for Webhook Platform"
+description = "Python SDK and CLI for FastAPI Microservices Platform event delivery"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "Apache-2.0"}
-authors = [{name = "Webhook Platform contributors"}]
+license = {file = "LICENSE"}
+authors = [{name = "FastAPI Microservices Platform contributors"}]
 dependencies = ["httpx==0.28.1"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: Apache Software License",
 ]
+
+[project.urls]
+Repository = "https://github.com/AmitSinghOM/fastapi-microservices-platform"
+Documentation = "https://github.com/AmitSinghOM/fastapi-microservices-platform/blob/main/docs/phase8-adoption.md"
+Issues = "https://github.com/AmitSinghOM/fastapi-microservices-platform/issues"
 
 [project.optional-dependencies]
 outbox = ["SQLAlchemy==2.0.36"]
@@ -25,6 +30,7 @@ webhookctl = "webhook_platform_sdk.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+license-files = ["LICENSE"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

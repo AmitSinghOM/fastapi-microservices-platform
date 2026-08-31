@@ -19,6 +19,7 @@ files = [
   "app/webhook_security.py",
   "scripts/phase3_dns_server.py",
   "scripts/phase8_usability_study.py",
+  "scripts/release_registry.py",
   "scripts/verify_egress_boundary.py",
   "sdk/python/src/webhook_platform_sdk",
 ]

@@ -2,10 +2,17 @@
 
 ## Current scope
 
-Phase 8 adds a publishable Python package, raw-byte receiver helpers, an optional
-SQLAlchemy outbox relay, `webhookctl`, native/CloudEvents wire documentation,
-and minimal producer/receiver examples. The service remains one modular
-codebase with PostgreSQL as its durable delivery queue.
+Phase 8 adds the `fastapi-microservices-platform-sdk` distribution,
+raw-byte receiver helpers, an optional SQLAlchemy outbox relay, `webhookctl`,
+native/CloudEvents wire documentation, and minimal producer/receiver examples.
+The service remains one modular codebase with PostgreSQL as its durable delivery
+queue and does not require Redis or Kafka.
+
+[ADR 0001](adr/0001-product-identity.md) retains **FastAPI Microservices
+Platform** and the `fastapi-microservices-platform` repository. Distribution
+`fastapi-microservices-platform-sdk` intentionally differs from import
+`webhook_platform_sdk`, CLI `webhookctl`, and environment prefix
+`WEBHOOK_PLATFORM_`.
 
 The package has not yet been released to a package index. Install it from the
 repository while the external usability gate remains open:
@@ -131,27 +138,46 @@ panel; avoid browser, terminal, and session recording during setup.
 
 ## Package publication preparation
 
-`.github/workflows/python-sdk-release.yml` is manual, accepts only a signed
-`sdk-vMAJOR.MINOR.PATCH` tag whose commit is contained in `origin/main`, verifies
-that the tag matches package metadata, builds and checks both distributions,
-installs the wheel into a clean virtual environment, exercises public imports
-and `webhookctl`, and only then publishes through PyPI OpenID Connect. The
-`pypi` GitHub environment should require maintainer approval.
+Two manual workflows implement the solo-maintainer release path. Both accept
+only a GitHub-verified signed `sdk-vMAJOR.MINOR.PATCH` annotated tag, resolve it
+to an exact commit in `origin/main`, require successful main-push CI for that
+SHA, verify package/tag equality, check both distributions, verify SHA-256
+hashes, install the wheel in a clean virtual environment, and exercise
+`webhook_platform_sdk` plus `webhookctl`. The TestPyPI workflow builds from the
+clean tagged checkout with a fixed source timestamp, retains the exact wheel,
+source archive, and `SHA256SUMS` as one GitHub artifact, and restores those bytes
+on retry rather than rebuilding. It preflights absent or matching
+partial/complete registry state, repairs only missing files, and polls until exactly the expected non-yanked
+release exists with matching hashes and sizes.
 
-Before first publication, an owner must configure a pending PyPI trusted
-publisher for project `webhook-platform-sdk`, this repository, workflow
-`python-sdk-release.yml`, and environment `pypi`. Then create and push a signed
-SDK tag from a green main commit and manually dispatch the workflow with that
-exact tag. Do not configure a long-lived PyPI API token.
+Both workflows must be dispatched from the signed tag while receiving that same
+tag as input so protected environments can enforce `sdk-v*` deployment refs.
+At least 24 hours after successful TestPyPI publication,
+`python-sdk-release.yml` selects the successful test workflow for the exact tag
+and commit and retrieves its manifest. It verifies manifest/API/download hashes,
+reported and downloaded sizes, yanked state, approved HTTPS host and port before
+and after redirects, then applies the same retry-safe preflight and completion
+checks to PyPI. Configure an additional 24-hour `pypi` environment wait timer
+and restrict both environments to `sdk-v*` tags; those remote settings cannot
+be created in workflow YAML.
 
-Publication is intentionally not automatic and has not been performed. See
+Before first use, configure trusted publishers for distribution
+`fastapi-microservices-platform-sdk`, this repository, the respective workflow,
+and exact environment. Do not configure long-lived package-index tokens. Follow
+the [release checklist](sdk-release-checklist.md) and review from a second
+authenticated device or fresh session. Independent approval is not guaranteed,
+and no second maintainer is required.
+
+Publication is intentionally not automatic and has not been performed. This
+section summarizes, rather than reproduces, the linked
 [PyPI trusted publisher setup](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
-and [publisher usage](https://docs.pypi.org/trusted-publishers/using-a-publisher/).
-Internet-derived material was paraphrased for licensing compliance.
+and [publisher usage](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
+guidance.
 
 ## External completion gate
 
-Automated checks cannot satisfy the phase completion gate. Follow
+Automated checks cannot satisfy the phase completion gate. Follow the ordered
+[external-gate runbook](phase8-external-gates.md), then use
 [the independent study protocol](phase8-usability-study.md) with ten developers
 who did not implement the feature. The recorder enforces pseudonymous IDs,
 timezone-aware durations, strict under-30-minute timing, no-help qualification,

@@ -1,4 +1,4 @@
-# Webhook Platform Action Plan
+# FastAPI Microservices Platform Action Plan
 
 ## Objective
 
@@ -427,6 +427,95 @@ Ruff, mypy, compilation, diagnostics, 123 fast application tests, 12 SDK tests,
 and `git diff --check`. No package was published and no participant evidence was
 created or inferred.
 
+**Phase 8 hosted validation evidence (2026-08-24):** Commit `c852bd8` is present
+on `origin/main`. GitHub CI run `32728738055` passed lint, type checks,
+compilation, secret scanning, SDK tests, the complete SQLite/PostgreSQL suite,
+and migration drift checks. Container run `32728738323` passed image builds and
+the enforced worker-egress boundary. The runs reported deprecated Node.js 20
+action runtimes. The follow-up workflow maintenance pins immutable commits for
+[Checkout v6](https://github.com/actions/checkout),
+[Setup Python v6](https://github.com/actions/setup-python),
+[Dependency Review v5](https://github.com/actions/dependency-review-action),
+[Gitleaks v3](https://github.com/gitleaks/gitleaks-action), and
+[Upload Artifact v6](https://github.com/actions/upload-artifact); each
+JavaScript action declares the Node.js 24 runtime. It also uses the peeled
+[PyPI publish v1.14.2](https://github.com/pypa/gh-action-pypi-publish) commit,
+adds targeted Python 3.11 SDK coverage, and requires a successful main-push
+CI run for the exact tagged commit before publication. This paragraph
+summarizes the linked upstream action metadata. The maintenance update still
+requires its own hosted validation after commit and push.
+
+**Phase 8 release-remediation local evidence (2026-08-24):** The exact Apache
+2.0 license is now present in both SDK distributions, package metadata contains
+repository, documentation, and issue URLs, and the tracked `.DS_Store` is
+removed and ignored. All workflow actions use immutable commits, and the
+release workflow's exact-commit CI query was exercised successfully against the
+prior green `main` commit. Ruff, mypy over 20 sources, compilation, 123 fast
+application tests, 12 SDK tests on Python 3.12, 12 SDK tests on Python 3.11,
+YAML diagnostics, Twine checks, exact artifact/license inspection, clean-wheel
+imports, CLI help, and `git diff --check` pass. No package was published, no
+release tag was created, and no human-study evidence was inferred.
+
+**Phase 8 identity decision correction (2026-08-24):** ADR 0001 retains
+`fastapi-microservices-platform` and the **FastAPI Microservices Platform**
+display name. The SDK distribution is
+`fastapi-microservices-platform-sdk`; import `webhook_platform_sdk`, CLI
+`webhookctl`, and `WEBHOOK_PLATFORM_*` environment names remain intentionally
+webhook-focused. The abandoned rename was removed from current source,
+configuration, and documentation, and no repository migration is required.
+Final distribution availability and legal/name review remain external checks;
+no clearance or package registration is claimed.
+
+**Phase 8 solo-release preparation (2026-08-24):** The release policy and
+external-gate runbook now state that one repository owner maintains and releases
+the project and that independent approval is not guaranteed. Signing must be
+proved on disposable references before the final signed candidate commit is
+created, pushed, verified, validated by exact-SHA CI and an explicitly
+dispatched Container run, and frozen for the cohort. Repository-wide signing
+enforcement remains later and separately authorized.
+
+The TestPyPI OIDC workflow retains the exact wheel, source archive, and
+`SHA256SUMS` before publishing. A retry restores those bytes instead of
+rebuilding, preflights absent or matching partial/complete state, skips only
+verified files, and polls for the exact complete non-yanked release. Production
+selects a successful
+TestPyPI run for the exact tag and commit, retrieves its manifest, verifies
+manifest/API/download hashes, sizes, host, port, redirect, and cooling-off
+constraints, then applies the same retry-safe recovery and completion contract
+to PyPI. Both manifests use the immutable Node.js 24 Upload Artifact v6 action.
+No remote settings, tags, releases, publication, or participant evidence were
+created. This preparation does not satisfy the completion gate.
+
+**Phase 8 final local validation (2026-08-24):** Ruff, mypy, compilation,
+workflow YAML, 28 workflow shell blocks, two embedded Python snippets,
+diagnostics, 123 fast application tests, 12 SDK tests on Python 3.12, and 12 SDK
+tests on Python 3.11 pass. A controlled simulation proves absent, matching
+partial, complete, conflicting size, yanked, unsafe-port, manifest-bound
+download, and cooling-off behavior in the shared registry verifier. Twine
+accepts the wheel and source distribution; both contain the exact SDK license
+and `webhook_platform_sdk`, and a clean wheel exposes distribution
+`fastapi-microservices-platform-sdk`, imports, and `webhookctl`.
+
+A repeated controlled double build confirms the wheel is reproducible but the
+setuptools source archive is not despite a fixed timestamp. Production therefore
+promotes the exact manifest-bound TestPyPI bytes rather than making a false
+source-archive reproducibility claim. No package was published and no external
+gate was inferred.
+
+**Phase 8 release-verifier validation (2026-09-01):** The shared registry
+verifier is now part of configured mypy coverage. The consolidated gate passes
+Ruff, mypy over 21 sources, compilation, 123 fast application tests, and 12 SDK
+tests on Python 3.12. A clean Python 3.11 environment passes all 12 SDK tests.
+Workflow YAML and portal JavaScript parse successfully. Twine accepts both SDK
+distributions; each contains the exact license and expected import package, and
+a clean wheel exposes version `0.1.0`, public imports, and `webhookctl`.
+Controlled registry simulation rejects size conflicts, yanked files, and
+unapproved ports while accepting absent, matching partial, and complete states;
+manifest-bound download and the 24-hour cooling-off check pass. Read-only
+GitHub checks confirm no rulesets or deployment environments currently exist,
+and local Git has no signing key/default configured. No package, tag, remote
+setting, or participant result was created.
+
 **Completion gate: open.** At least eight of ten independent developers must
 complete the clean-machine installation and signed-delivery flow in under 30
 minutes without maintainer help. Automated tests cannot satisfy this gate.
@@ -515,5 +604,5 @@ idempotent because broker and relay delivery remain at least once.
 - [KEDA event-driven autoscaling](https://keda.sh/)
 - [CloudEvents specification](https://github.com/cloudevents/spec)
 
-Internet-derived material was paraphrased for compliance with licensing
-restrictions.
+The research guidance above summarizes the linked sources without reproducing
+their text.
