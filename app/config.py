@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     rate_limit_requests: int = Field(default=20, ge=1, le=10_000)
     rate_limit_window_seconds: int = Field(default=60, ge=1, le=86_400)
     rate_limit_max_entries: int = Field(default=10_000, ge=100, le=1_000_000)
+    # Shared per-account credential throttling (database-backed, so the
+    # budget holds across every API replica and process restart).
+    login_throttle_max_failures: int = Field(default=10, ge=1, le=1_000)
+    login_throttle_window_seconds: int = Field(default=900, ge=60, le=86_400)
+    login_throttle_lockout_seconds: int = Field(default=300, ge=1, le=86_400)
 
     worker_poll_seconds: float = Field(default=1.0, ge=0.05, le=60)
     worker_batch_size: int = Field(default=50, ge=1, le=500)

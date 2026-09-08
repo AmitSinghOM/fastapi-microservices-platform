@@ -708,3 +708,21 @@ class DeliveryAttempt(Base):
     response_purged_at = Column(DateTime(timezone=True), nullable=True)
 
     delivery = relationship("Delivery", overlaps="attempts")
+
+
+class LoginThrottle(Base):
+    """Shared, replica-safe brute-force state for credential endpoints.
+
+    The in-process ``RateLimitMiddleware`` window multiplies by API replica
+    count and resets on restart, so per-account throttling lives in the
+    database that every replica already shares. Rows are keyed by a bounded
+    scope string such as ``email:<lowercased address>``.
+    """
+
+    __tablename__ = "login_throttles"
+
+    scope = Column(String(340), primary_key=True)
+    failure_count = Column(Integer, nullable=False, default=0)
+    window_started_at = Column(DateTime(timezone=True), nullable=False)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
