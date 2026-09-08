@@ -30,13 +30,64 @@ creatable via API/SDK/CLI but not via the portal.
 | Priority | Item | Why now | Effort / owner |
 | --- | --- | --- | --- |
 | P0 | Push the 13 local commits | All 2026-09-08 work (3 migrations, ADR 0002, security fixes) exists only on one machine's local `main`. Single biggest risk. | ~5 min; requires the owner's terminal (agent pushes to main are policy-blocked). |
-| P1 | Signed release candidate → real PyPI | `d321e67` is CI-green but unsigned; SDK is TestPyPI-only. Unblocks three things at once: Phase 8 completion, receiver-first migration (receivers must be able to `pip install` the auto-detecting verifier), and the 4.0 default flip whose hard entry criterion is exactly this. Highest leverage per hour. | Owner: configure signing key, follow the release workflow. |
+| P1 | Signed release candidate → real PyPI | `d321e67` is stale (20 commits behind) and unsigned; SDK is TestPyPI-only. Unblocks three things at once: Phase 8 external steps, receiver-first migration (receivers must be able to `pip install` the auto-detecting verifier), and the 4.0 default flip whose hard entry criterion is exactly this. Owner-only; phased runbook below. | ~1–2 h active + mandatory 24 h TestPyPI cooling-off. |
 | P2 | Phase 8 scripted clean-machine gate | ✅ **Done 2026-09-08.** `scripts/phase8_clean_machine_gate.py` runs the full adoption flow unattended from a fresh clone + venv — install, auth, org/project/key/endpoint (`standard` scheme), signed event, worker delivery to `succeeded`, exactly-once receiver acceptance, CLI inspection. Two consecutive green runs (33.8 s / 31.9 s vs 1,800 s budget). Required a new dev-only `ALLOW_PRIVATE_WEBHOOKS` flag, which also fixed the quick start never completing locally. | Done; evidence in `action.md`. |
 | P3 | Adoption-friction docs | ✅ **Done 2026-09-08.** Standard Webhooks verification snippets (Python/JS/Go, APIs verified against the official library READMEs) in the adoption guide; static egress IP paragraph and outbox broker-ingest positioning in the README; portal endpoint form gained the `event_types` filter field. | Done. |
 | P4 | Phase 9 production deployment guidance | Required before real pilots; not started. | Multi-day docs + reference-deployment work. |
 | P5 | Queue-age SLO honesty | 30 s SLO unmet (p95 134.46 s at baseline). Before Phase 10 publishes capacity claims, either tune toward it or formally restate it. Cheap to restate, expensive to ignore. | Decision + either tuning work or a one-line SLO revision. |
 | Parked | 4.0 default flip (ADR 0002 staging) | Sequenced behind P1 by design: flip only after the SDK is installable from PyPI and at least one real receiver has run `standard` end-to-end. Code change is trivial (Pydantic default only; leave DB `server_default` as `legacy`). Batch with the `EXAMPLE_ITEMS_ENABLED` off-default in one major release. | Blocked on P1. |
 | Deferred | Feature work: white-label portal (#4), transformations (#5), broker ingest (#6), Helm (#8) | All wait for Phase 10 pilot evidence. Building Svix's flagship feature before having one design partner inverts the "measured bottlenecks first" rule. | Revisit after Phase 10 interviews/pilots. |
+
+## P1 release phases (owner-only runbook)
+
+Grounded in [the SDK release checklist](docs/sdk-release-checklist.md),
+[the external-gate runbook](docs/phase8-external-gates.md), and
+[the release policy](docs/release-policy.md). Every phase is sequential;
+any mismatch or changed candidate stops the release (fix forward, never
+replace published files).
+
+1. **Phase A — signing capability (one-time, ~15 min).** Generate an SSH
+   signing key (`ssh-keygen -t ed25519 -f ~/.ssh/git_signing_ed25519`),
+   add it to GitHub as a *Signing Key*, set repo-local
+   `gpg.format ssh` + `user.signingkey`. Test a signed commit and signed
+   annotated tag on a disposable branch until GitHub shows **Verified**,
+   then enable repo-local `commit.gpgsign` / `tag.gpgsign`.
+2. **Phase B — push (P0 prerequisite).** Push the accumulated local
+   commits to `origin/main` from the owner's terminal.
+3. **Phase C — frozen candidate.** The old candidate `d321e67` is stale
+   and unsigned. Make one small **signed** commit on `main`; confirm the
+   exact-SHA main CI run and an explicitly dispatched Container run are
+   green on that SHA; freeze it. Any material change afterward requires a
+   new signed candidate.
+4. **Phase D — publisher plumbing (one-time, web UI).** On TestPyPI and
+   PyPI: add a *pending trusted publisher* for
+   `fastapi-microservices-platform-sdk` (repo + workflow file +
+   environment names `testpypi`/`pypi`; OIDC only, no tokens). On GitHub:
+   create the `testpypi` and `pypi` environments restricted to `sdk-v*`
+   tags with a **24-hour wait timer on `pypi`**, plus `main`/`sdk-v*`
+   protections (no force-push or deletion). Past evidence recorded that
+   none of these exist yet.
+5. **Phase E — TestPyPI.** Signed annotated `sdk-v0.1.0` tag on the
+   unchanged frozen candidate (Verified). Dispatch
+   `python-sdk-test-release.yml` from that tag with the tag as input.
+   Verify retained wheel/sdist/`SHA256SUMS` and preflight per the
+   checklist; clean-venv install from TestPyPI with
+   `import webhook_platform_sdk` and `webhookctl --help` smoke checks.
+   Then wait **24 hours** without moving the tag or candidate.
+6. **Phase F — production.** Review evidence from a second authenticated
+   device/session; dispatch `python-sdk-release.yml` from the same tag;
+   confirm preflight, environment wait, OIDC, and post-publication
+   polling; clean `pip install fastapi-microservices-platform-sdk` from
+   PyPI and record the final URL and hashes.
+
+Completing Phase F satisfies the 4.0 default-flip entry criterion and
+makes receiver-first migration real (receivers can install the
+auto-detecting verifier).
+
+**Known doc inconsistency:** the release checklist still requires the
+descoped 8-of-10 human study ("ten eligible independent runs"); that line
+predates the 2026-09-08 gate amendment and should be updated to reference
+the scripted clean-machine gate before it blocks a release mid-flow.
 
 ## Summary
 
