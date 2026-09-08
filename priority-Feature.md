@@ -84,10 +84,9 @@ Completing Phase F satisfies the 4.0 default-flip entry criterion and
 makes receiver-first migration real (receivers can install the
 auto-detecting verifier).
 
-**Known doc inconsistency:** the release checklist still requires the
-descoped 8-of-10 human study ("ten eligible independent runs"); that line
-predates the 2026-09-08 gate amendment and should be updated to reference
-the scripted clean-machine gate before it blocks a release mid-flow.
+**Resolved 2026-09-08:** the release checklist's stale 8-of-10 human-study
+requirement was replaced with the scripted clean-machine gate, so the
+runbook and checklist now agree.
 
 ## Summary
 

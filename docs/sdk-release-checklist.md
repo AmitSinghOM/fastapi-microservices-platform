@@ -21,10 +21,13 @@ and hashes in private release evidence; never store credentials.
       marks that exact commit as `Verified`.
 - [ ] Record successful exact-SHA main-push CI and an explicitly dispatched
       Container run whose `head_sha` equals the candidate SHA.
-- [ ] Freeze that SHA before the cohort; any material change requires a new
-      signed candidate, hosted validation, freeze, and cohort.
-- [ ] Confirm the Phase 8 study has ten eligible independent runs and at least
-      eight qualifying successes.
+- [ ] Freeze that SHA; any material change requires a new signed candidate,
+      hosted validation, and a fresh freeze.
+- [ ] Confirm the amended Phase 8 completion gate passed on the frozen
+      candidate: `scripts/phase8_clean_machine_gate.py` green within its
+      30-minute budget, with the JSON report retained as evidence (the
+      8-of-10 independent-developer study was descoped on 2026-09-08; see
+      the action plan's gate decision).
 
 ## Repository and publisher controls
 
