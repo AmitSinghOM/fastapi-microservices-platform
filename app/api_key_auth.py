@@ -38,28 +38,41 @@ async def get_api_key_project(
     if match is None:
         raise invalid_api_key()
 
-    row = (
+    rows = (
         await db.execute(
             select(ApiKey, Project, Organization)
             .join(Project, Project.id == ApiKey.project_id)
             .join(Organization, Organization.id == Project.organization_id)
             .where(ApiKey.key_prefix == match.group("prefix"))
         )
-    ).one_or_none()
+    ).all()
+
+    # A unique index enforces one row per prefix today, but authentication
+    # must not depend on that schema detail: verify the peppered digest
+    # against every returned candidate and select the verifying key.
+    settings = get_settings()
+    row = next(
+        (
+            candidate
+            for candidate in rows
+            if _DIGEST_PATTERN.fullmatch(candidate[0].key_digest)
+            and verify_api_key(
+                plaintext or "",
+                candidate[0].key_digest,
+                settings.api_key_pepper,
+            )
+        ),
+        None,
+    )
     if row is None:
         raise invalid_api_key()
 
     api_key, project, organization = row
-    settings = get_settings()
     scopes = api_key.scopes
     now = await database_now(db)
     if (
         not api_key.is_active
         or api_key.revoked_at is not None
-        or not _DIGEST_PATTERN.fullmatch(api_key.key_digest)
-        or not verify_api_key(
-            plaintext or "", api_key.key_digest, settings.api_key_pepper
-        )
         or not isinstance(scopes, list)
         or _REQUIRED_SCOPE not in scopes
         or (

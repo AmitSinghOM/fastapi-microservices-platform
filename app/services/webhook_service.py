@@ -1061,6 +1061,26 @@ class WebhookService:
             raise RuntimeError("Project organization is unavailable")
         return str(organization_id)
 
+    async def _generate_unique_api_key(self) -> tuple[str, str]:
+        """Allocate a key whose random 48-bit lookup prefix is unused.
+
+        ``api_keys.key_prefix`` is unique, so an unlucky collision would
+        otherwise surface as an unhandled integrity error at commit. The
+        check-then-insert window is accepted: a concurrent allocation of
+        the same prefix still fails the unique constraint rather than
+        corrupting data.
+        """
+        for _ in range(5):
+            plaintext, prefix = generate_api_key()
+            exists = await self.db.scalar(
+                select(ApiKey.id).where(ApiKey.key_prefix == prefix)
+            )
+            if exists is None:
+                return plaintext, prefix
+        raise ConflictError(
+            "Could not allocate a unique API key prefix; retry the request"
+        )
+
     def _validate_scopes(self, scopes: list[str]) -> list[str]:
         if not scopes or len(scopes) != len(set(scopes)):
             raise ValidationError(
@@ -1099,7 +1119,7 @@ class WebhookService:
         requested_scopes = self._validate_scopes(
             scopes if scopes is not None else ["events:write"]
         )
-        plaintext, prefix = generate_api_key()
+        plaintext, prefix = await self._generate_unique_api_key()
         public_id = str(uuid4())
         api_key = ApiKey(
             public_id=public_id,
@@ -1217,7 +1237,7 @@ class WebhookService:
         ):
             raise ConflictError("Only an active API key can be rotated")
         scopes = self._validate_scopes(list(previous.scopes))
-        plaintext, prefix = generate_api_key()
+        plaintext, prefix = await self._generate_unique_api_key()
         replacement = ApiKey(
             public_id=str(uuid4()),
             project_id=project.id,
