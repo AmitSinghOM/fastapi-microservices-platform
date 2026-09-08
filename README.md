@@ -2,11 +2,13 @@
 
 [![CI](https://github.com/AmitSinghOM/fastapi-microservices-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/AmitSinghOM/fastapi-microservices-platform/actions/workflows/ci.yml)
 
-A production-oriented FastAPI and PostgreSQL platform for durable, multi-tenant
-event delivery without requiring Redis or Kafka. PostgreSQL provides
-transactional state, delivery scheduling, fairness, retries, dead-letter
-operations, and lifecycle management. The repository includes a Python SDK,
-CLI, operational portal, and independently scalable API and worker runtimes.
+**A self-hosted, PostgreSQL-native webhook delivery platform** — an
+open-source alternative to hosted webhook services in the spirit of Svix and
+Convoy, built for teams that want durable, multi-tenant event delivery
+without operating Redis or Kafka. PostgreSQL provides transactional state,
+delivery scheduling, fairness, retries, dead-letter operations, and lifecycle
+management. The repository includes a Python SDK, CLI, operational portal,
+and independently scalable API and worker runtimes.
 
 Additional brokers are deliberately deferred until measured throughput,
 isolation, or retention requirements justify their operational cost. Existing
@@ -73,9 +75,12 @@ API_KEY=$(curl -sS -X POST "$BASE/v1/projects/$PROJECT/api-keys" \
   -d '{"name":"producer"}' | jq -r .plaintext_key)
 
 # Use a public HTTPS receiver whose DNS resolves only to global addresses.
+# event_types is optional: omit it to receive every event, or subscribe to
+# exact types and trailing "prefix.*" wildcards.
 curl -sS -X POST "$BASE/v1/projects/$PROJECT/endpoints" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"url":"https://receiver.example/webhooks","description":"primary"}'
+  -d '{"url":"https://receiver.example/webhooks","description":"primary",
+       "event_types":["order.*","user.created"]}'
 
 curl -sS -X POST "$BASE/v1/events" \
   -H "X-API-Key: $API_KEY" -H 'Idempotency-Key: order-123-created' \
@@ -89,6 +94,15 @@ CONFLICT`. Lists use bounded `offset` and `limit` (maximum 100). Management
 routes cover organizations/members/projects, key revocation, endpoint update,
 deactivation and secret rotation, event/delivery detail, attempts, and replay.
 Replay creates a fresh delivery linked to the original.
+
+Endpoints may subscribe to specific event types. A missing or null
+`event_types` receives every event; a list (up to 100 validated, deduplicated
+entries) restricts fan-out to exact matches and trailing `prefix.*` wildcards,
+where `order.*` matches `order.created` but neither `order` nor
+`orders.created`. Filtering happens once at acceptance, before admission, so
+quotas charge only for deliveries actually created and accepted deliveries
+are never re-filtered by later subscription edits. An event matching no
+endpoint is still accepted and retained with zero deliveries.
 
 ## Signature verification
 
@@ -238,8 +252,15 @@ scoped and expiring, support bounded-overlap rotation, and remain one-time
 plaintext values. Endpoint signing versions have explicit overlap windows while
 accepted deliveries retain their immutable version snapshots.
 
-Administrative mutations append sanitized immutable audit events. Per-tenant
-policies independently bound payload and receiver-response retention; the
+Administrative mutations append sanitized immutable audit events. Login
+brute-force protection is per-account and database-backed, so its failure
+budget holds across API replicas and restarts: repeated failures inside a
+rolling window lock the account scope and return `429` with `Retry-After`
+without evaluating credentials, a successful login clears the state, and
+unknown addresses lock identically so the throttle is not an enumeration
+oracle. The in-process request rate limiter remains as defense in depth.
+Per-tenant policies independently bound payload and receiver-response
+retention; the
 existing worker clears expired content and performs grace-delayed organization
 cleanup in bounded transactions. Organization export excludes payloads,
 responses, destinations, and credential material. See
@@ -296,7 +317,10 @@ endpoint retry/circuit state, and creates replay audit records. Revision
 adds role assignments, scoped key and endpoint-secret lifecycles, immutable
 audit history, retention policy, and organization cleanup state. Revision
 `0008` adds an immutable `native|cloudevents` envelope selector and refuses an
-unsafe downgrade while CloudEvents rows exist. Set `AUTO_CREATE_SCHEMA=false`
+unsafe downgrade while CloudEvents rows exist. Revision `0009` adds shared
+per-account login-throttle state. Revision `0010` adds nullable per-endpoint
+event-type subscriptions; existing endpoints keep receiving every event.
+Set `AUTO_CREATE_SCHEMA=false`
 in staging/production;
 those environments reject local schema auto-creation and require all three
 secrets at 32+ characters. Configuration includes multiplied replica/database
