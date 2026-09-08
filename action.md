@@ -526,6 +526,29 @@ candidates newest-first and restores only bytes that match existing registry
 state; it remains uncommitted and requires a future signed fix-forward candidate
 plus new exact-SHA hosted validation. No remote history was rewritten.
 
+**Post-review hardening and adoption features (2026-09-08):** A staff-level
+review plus comparison against Svix, Convoy, and Hook0 drove ten local
+commits (`eb3c41f`..`e84ad1a`). Fixes: API-key lookup-prefix collisions now
+retry allocation and digest-verify candidates instead of raising
+(`3c6f45f`); login brute-force protection moved to a shared database-backed
+per-account budget with `429`/`Retry-After`, migration `0009` (`f7e5d71`).
+Features: per-endpoint event-type subscriptions with exact and trailing
+`prefix.*` wildcard filters applied at acceptance before admission,
+migration `0010`, with SDK/`webhookctl` support (`cad4b1a`, `e851e8e`);
+ADR 0002 designs Standard Webhooks alignment as a versioned wire change —
+review dropped the mixed-header "dual" bridge after finding the shipped SDK
+receiver parser rejects it, replacing it with receiver-first migration
+(`df16ba2`, `40c1854`). Phase one is implemented (`189827c`, `e84ad1a`):
+per-endpoint `legacy|standard` schemes with delivery snapshots and replay
+copies, migration `0011` with guarded downgrade, spec-exact `standard`
+emission cross-verified by the official `standardwebhooks` library, scheme
+auto-detecting SDK receiver, one-time standard-form secret on scheme
+upgrade, and golden vectors in the wire protocol. README repositioned as a
+webhook delivery platform (`7a80d20`). Full gate: Ruff, mypy over 21
+sources, 142 application tests, 29 SDK tests, compilation. All commits are
+local and unpushed; defaults remain `legacy`, so no wire bytes changed for
+existing endpoints.
+
 **Completion gate: open.** At least eight of ten independent developers must
 complete the clean-machine installation and signed-delivery flow in under 30
 minutes without maintainer help. Automated tests cannot satisfy this gate.
