@@ -86,6 +86,12 @@ def _parser() -> argparse.ArgumentParser:
             "trailing 'prefix.*' wildcard; omit to receive every event"
         ),
     )
+    endpoint_create.add_argument(
+        "--signature-scheme",
+        choices=("legacy", "standard"),
+        dest="signature_scheme",
+        help="wire signature scheme; 'standard' emits Standard Webhooks",
+    )
     endpoint_update = endpoint_commands.add_parser("update")
     _add_project_id(endpoint_update)
     endpoint_update.add_argument("--endpoint", required=True)
@@ -110,6 +116,15 @@ def _parser() -> argparse.ArgumentParser:
         "--all-events",
         action="store_true",
         help="clear the subscription filter and receive every event",
+    )
+    endpoint_update.add_argument(
+        "--signature-scheme",
+        choices=("legacy", "standard"),
+        dest="signature_scheme",
+        help=(
+            "change the wire signature scheme; switching to 'standard' "
+            "prints a one-time signing secret"
+        ),
     )
 
     events = commands.add_parser("events")
@@ -279,6 +294,7 @@ def _management_command(args: argparse.Namespace) -> Any:
                     args.url,
                     args.description,
                     event_types=args.event_types,
+                    signature_scheme=args.signature_scheme,
                 )
             changes: dict[str, Any] = {}
             if args.url is not None:
@@ -293,6 +309,8 @@ def _management_command(args: argparse.Namespace) -> Any:
                 changes["event_types"] = None
             elif args.event_types is not None:
                 changes["event_types"] = args.event_types
+            if args.signature_scheme is not None:
+                changes["signature_scheme"] = args.signature_scheme
             if not changes:
                 raise ValueError(
                     "endpoints update requires at least one change"

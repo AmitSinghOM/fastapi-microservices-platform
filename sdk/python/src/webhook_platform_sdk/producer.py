@@ -295,17 +295,21 @@ class ManagementClient(_JsonClient):
         description: str | None = None,
         *,
         event_types: list[str] | None = None,
+        signature_scheme: str | None = None,
     ) -> dict[str, Any]:
         """Create an endpoint, optionally subscribed to specific types.
 
         ``event_types`` accepts exact event types and trailing ``prefix.*``
-        wildcards. Omitting it (``None``) subscribes the endpoint to every
-        event; the field is then left off the request so the call also works
-        against servers that predate subscription filtering.
+        wildcards. ``signature_scheme`` selects ``legacy`` or ``standard``
+        wire signatures (ADR 0002). Optional fields are left off the
+        request when unset so the call also works against servers that
+        predate them.
         """
         body: dict[str, Any] = {"url": url, "description": description}
         if event_types is not None:
             body["event_types"] = list(event_types)
+        if signature_scheme is not None:
+            body["signature_scheme"] = signature_scheme
         return self._request(
             "POST",
             f"/v1/projects/{project_id}/endpoints",
@@ -321,12 +325,15 @@ class ManagementClient(_JsonClient):
         description: str | None = _UNSET,
         is_active: bool = _UNSET,
         event_types: list[str] | None = _UNSET,
+        signature_scheme: str = _UNSET,
     ) -> dict[str, Any]:
         """Partially update an endpoint.
 
         Only keyword arguments that are passed are sent, matching the API's
         PATCH semantics. Pass ``event_types=None`` explicitly to clear a
-        subscription filter so the endpoint receives every event again.
+        subscription filter. Changing ``signature_scheme`` to ``standard``
+        returns a one-time ``signing_secret`` usable with any Standard
+        Webhooks library; capture it directly into a secret manager.
         """
         changes: dict[str, Any] = {}
         for field, value in (
@@ -334,6 +341,7 @@ class ManagementClient(_JsonClient):
             ("description", description),
             ("is_active", is_active),
             ("event_types", event_types),
+            ("signature_scheme", signature_scheme),
         ):
             if value is not _UNSET:
                 changes[field] = value

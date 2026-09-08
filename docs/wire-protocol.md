@@ -57,9 +57,18 @@ Every attempt sends:
 | `Webhook-Event` | Event type |
 | `Webhook-Attempt` | Delivery attempt number |
 | `Webhook-Timestamp` | Unix seconds used by the signature |
-| `Webhook-Signature` | `t=<seconds>,v1=<lowercase-hex>` |
+| `Webhook-Signature` | Scheme-dependent; see below |
 
-For timestamp `T`, body bytes `B`, and endpoint secret `S`:
+Each endpoint selects one of two signature schemes (see
+[ADR 0002](adr/0002-standard-webhooks-alignment.md)). The scheme is
+snapshotted per delivery at acceptance, so endpoint edits never change the
+signature of accepted or replayed work.
+
+### `legacy` scheme (default)
+
+The header is exactly `t=<seconds>,v1=<lowercase-hex>`. For timestamp `T`,
+body bytes `B`, and endpoint secret string `S`
+(`whsec_` + unpadded base64url of the derived key):
 
 ```text
 signed = ASCII(decimal(T)) || "." || B
@@ -67,10 +76,53 @@ v1 = lowercase_hex(HMAC-SHA256(UTF8(S), signed))
 ```
 
 A receiver must read the exact raw body before JSON parsing, parse `t` and one
-or more `v1` values, reject malformed headers, enforce a local timestamp
-tolerance, recompute the digest over the original bytes, and compare in constant
-time. It should also require `Webhook-Timestamp` to equal `t` and require signed
-body `id`/`type` fields to match `Webhook-Id`/`Webhook-Event`.
+or more `v1` values while ignoring unrecognized space-delimited tokens,
+enforce a local timestamp tolerance, recompute the digest over the original
+bytes, and compare in constant time. It should also require
+`Webhook-Timestamp` to equal `t` and require signed body `id`/`type` fields
+to match `Webhook-Id`/`Webhook-Event`.
+
+### `standard` scheme (Standard Webhooks)
+
+The header is `webhook-signature: v1,<base64>` per the
+[Standard Webhooks specification](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md);
+`webhook-id` and `webhook-timestamp` carry the event ID and unix seconds.
+For event ID `I`, timestamp `T`, body bytes `B`, and raw derived key bytes
+`K` (the base64-decoded content of the secret after `whsec_`):
+
+```text
+signed = ASCII(I) || "." || ASCII(decimal(T)) || "." || B
+v1 = standard_base64(HMAC-SHA256(K, signed))
+```
+
+Any Standard Webhooks verification library verifies these deliveries using
+the standard-form secret (`whsec_` + padded standard base64). Receivers on
+the platform SDK auto-detect the scheme from the header token shapes.
+
+Both secret serializations encode the same derived key. The one-time secret
+returned by endpoint creation, scheme change, and rotation uses the
+endpoint's current scheme's serialization.
+
+### Golden vectors
+
+With signing key `"w" * 32`, endpoint public ID
+`11111111-2222-3333-4444-555555555555`, secret version `1`, event ID
+`ev-1`, timestamp `1767225600`, and body:
+
+```json
+{"created_at":"2026-01-01T00:00:00+00:00","data":{"n":1},"id":"ev-1","type":"order.created"}
+```
+
+| Scheme | Value |
+| --- | --- |
+| `legacy` secret | `whsec_vTRXG2CwqFf6P80ez648Z8G7XaZ43olDednJZdwY4_Y` |
+| `legacy` header | `t=1767225600,v1=6b03e0ceb6090c37d1282ff13ddfed9448c36cdd0ad0dd1f5595fcfae95f450d` |
+| `standard` secret | `whsec_vTRXG2CwqFf6P80ez648Z8G7XaZ43olDednJZdwY4/Y=` |
+| `standard` header | `v1,iH/jZ1lyFWRV9aCjqdIBDtxT1BlnAWLzUAmn+fLcBU0=` |
+
+These vectors are regression-locked in `app/tests/test_signature_scheme.py`,
+and `standard` emission is additionally cross-verified by the official
+`standardwebhooks` Python library in CI.
 
 During signing-secret rotation, a receiver may test the bounded active and
 previous secrets. It must not accept retired secrets indefinitely.

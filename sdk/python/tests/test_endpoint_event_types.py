@@ -99,7 +99,10 @@ class FakeManagement:
     def __exit__(self, *args):
         return None
 
-    def create_endpoint(self, project_id, url, description, *, event_types):
+    def create_endpoint(
+        self, project_id, url, description, *,
+        event_types, signature_scheme=None,
+    ):
         self.calls.append(
             ("create", project_id, url, description, event_types)
         )

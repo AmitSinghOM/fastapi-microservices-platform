@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import json
@@ -48,26 +50,72 @@ class ReceiverEvent:
 
 
 def _signature_parts(header: str) -> tuple[int, list[str]]:
+    """Parse the legacy ``t=<seconds>,v1=<hex>`` header format.
+
+    Only tokens in the legacy shape participate; unrecognized
+    space-delimited tokens (for example Standard Webhooks ``v1,<base64>``
+    entries) are ignored rather than treated as malformed, so a receiver on
+    this SDK survives header formats it does not use.
+    """
     timestamp: int | None = None
     signatures: list[str] = []
-    for item in header.split(","):
-        name, separator, value = item.strip().partition("=")
-        if not separator or not value:
-            raise InvalidSignature()
-        if name == "t":
-            if timestamp is not None or not value.isdigit():
+    for token in header.split():
+        if "=" not in token.partition(",")[0]:
+            continue
+        for item in token.split(","):
+            name, separator, value = item.strip().partition("=")
+            if not separator or not value:
                 raise InvalidSignature()
-            timestamp = int(value)
-        elif name == "v1":
-            if len(value) == 64:
-                try:
-                    bytes.fromhex(value)
-                except ValueError as exc:
-                    raise InvalidSignature() from exc
-                signatures.append(value.lower())
+            if name == "t":
+                if timestamp is not None or not value.isdigit():
+                    raise InvalidSignature()
+                timestamp = int(value)
+            elif name == "v1":
+                if len(value) == 64:
+                    try:
+                        bytes.fromhex(value)
+                    except ValueError as exc:
+                        raise InvalidSignature() from exc
+                    signatures.append(value.lower())
     if timestamp is None or not signatures:
         raise InvalidSignature()
     return timestamp, signatures
+
+
+def _standard_signatures(header: str) -> list[str]:
+    """Collect Standard Webhooks ``v1,<base64>`` tokens, ignoring others."""
+    signatures: list[str] = []
+    for token in header.split():
+        version, separator, value = token.partition(",")
+        if separator and version == "v1" and value:
+            signatures.append(value)
+    return signatures
+
+
+def _secret_key_bytes(secret: str) -> bytes | None:
+    """Decode either secret serialization to the raw digest bytes.
+
+    Accepts ``whsec_`` + padded standard base64 (the standard form) and
+    ``whsec_`` + unpadded base64url (the legacy form). Returns ``None``
+    when the secret does not decode, in which case only legacy
+    verification (which keys on the ASCII string itself) is possible.
+    """
+    if not secret.startswith("whsec_"):
+        return None
+    encoded = secret.removeprefix("whsec_")
+    padded = encoded + "=" * (-len(encoded) % 4)
+    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            return decoder(padded)
+        except (ValueError, binascii.Error):
+            continue
+    return None
+
+
+def _header_has_legacy_token(header: str) -> bool:
+    return any(
+        "=" in token.partition(",")[0] for token in header.split()
+    )
 
 
 def verify_signature(
@@ -78,7 +126,7 @@ def verify_signature(
     tolerance_seconds: int = 300,
     now: int | None = None,
 ) -> int:
-    """Verify HMAC over timestamp + period + exact unparsed body bytes."""
+    """Verify a legacy HMAC over timestamp + period + exact body bytes."""
     if tolerance_seconds < 0:
         raise ValueError("tolerance_seconds must be non-negative")
     timestamp, signatures = _signature_parts(signature_header)
@@ -94,6 +142,42 @@ def verify_signature(
     return timestamp
 
 
+def verify_signature_standard(
+    raw_body: bytes,
+    event_id: str,
+    timestamp_header: str | None,
+    signature_header: str,
+    secret: str,
+    *,
+    tolerance_seconds: int = 300,
+    now: int | None = None,
+) -> int:
+    """Verify a Standard Webhooks signature (``v1,<base64>``).
+
+    Signed content is ``event_id.timestamp.body``; the key is the decoded
+    secret digest. Either secret serialization is accepted.
+    """
+    if tolerance_seconds < 0:
+        raise ValueError("tolerance_seconds must be non-negative")
+    if not timestamp_header or not timestamp_header.isdigit():
+        raise InvalidSignature()
+    timestamp = int(timestamp_header)
+    current_time = int(time.time()) if now is None else now
+    if abs(current_time - timestamp) > tolerance_seconds:
+        raise SignatureExpired()
+    signatures = _standard_signatures(signature_header)
+    key = _secret_key_bytes(secret)
+    if not signatures or key is None:
+        raise InvalidSignature()
+    signed = f"{event_id}.{timestamp}.".encode("ascii") + raw_body
+    expected = base64.b64encode(
+        hmac.new(key, signed, hashlib.sha256).digest()
+    ).decode()
+    if not any(hmac.compare_digest(expected, item) for item in signatures):
+        raise InvalidSignature()
+    return timestamp
+
+
 def verify_request(
     raw_body: bytes,
     headers: Mapping[str, str],
@@ -102,23 +186,41 @@ def verify_request(
     tolerance_seconds: int = 300,
     now: int | None = None,
 ) -> ReceiverEvent:
-    """Verify headers and raw bytes before parsing the JSON envelope."""
+    """Verify headers and raw bytes before parsing the JSON envelope.
+
+    Scheme auto-detection (ADR 0002): a header containing a legacy
+    ``t=…,v1=…`` token verifies as legacy; otherwise ``v1,<base64>``
+    tokens verify as Standard Webhooks. Either secret serialization is
+    accepted, so a receiver can upgrade this SDK before its endpoint
+    switches schemes.
+    """
     normalized = {name.lower(): value for name, value in headers.items()}
     signature = normalized.get("webhook-signature")
     event_id = normalized.get("webhook-id")
     event_type = normalized.get("webhook-event")
     if not signature or not event_id or not event_type:
         raise InvalidSignature()
-    timestamp = verify_signature(
-        raw_body,
-        signature,
-        secret,
-        tolerance_seconds=tolerance_seconds,
-        now=now,
-    )
     timestamp_header = normalized.get("webhook-timestamp")
-    if timestamp_header != str(timestamp):
-        raise InvalidSignature()
+    if _header_has_legacy_token(signature):
+        timestamp = verify_signature(
+            raw_body,
+            signature,
+            secret,
+            tolerance_seconds=tolerance_seconds,
+            now=now,
+        )
+        if timestamp_header != str(timestamp):
+            raise InvalidSignature()
+    else:
+        timestamp = verify_signature_standard(
+            raw_body,
+            event_id,
+            timestamp_header,
+            signature,
+            secret,
+            tolerance_seconds=tolerance_seconds,
+            now=now,
+        )
     try:
         document = json.loads(raw_body)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
