@@ -15,7 +15,7 @@ Platform** and the `fastapi-microservices-platform` repository. Distribution
 `WEBHOOK_PLATFORM_`.
 
 The package has not yet been released to a package index. Install it from the
-repository while the external usability gate remains open:
+repository while the release gate remains open:
 
 ```bash
 git clone <repository-url>
@@ -176,13 +176,15 @@ guidance.
 
 ## External completion gate
 
-Automated checks cannot satisfy the phase completion gate. Follow the ordered
-[external-gate runbook](phase8-external-gates.md), then use
-[the independent study protocol](phase8-usability-study.md) with ten developers
-who did not implement the feature. The recorder enforces pseudonymous IDs,
-timezone-aware durations, strict under-30-minute timing, no-help qualification,
-and the 8/10 aggregate threshold without storing credentials or payloads.
+The phase completion gate was amended on 2026-09-08: it is now a scripted
+clean-environment run that follows this guide verbatim from a fresh container
+or virtual environment — install, authenticate, create the organization,
+project, key, and endpoint, send a signed event, verify and durably accept it
+in the receiver example, and inspect the delivery — passing unattended within
+a 30-minute budget. The former 8-of-10 independent-developer study is
+descoped (solo project, no external testers); the
+[study protocol](phase8-usability-study.md) is retained for optional future
+human runs, and no document claims independent-usability validation.
 
-Phase 8 passes only when at least eight of ten finish in under 30 minutes without
-maintainer help. Until then, package publication, the 30-minute target, and the
-phase gate remain open; Phase 9 must not begin.
+Until the scripted gate is implemented and green, package publication, the
+30-minute target, and the phase gate remain open; Phase 9 must not begin.

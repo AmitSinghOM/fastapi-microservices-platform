@@ -293,10 +293,12 @@ only the API and CLI.
 
 See [the wire protocol](docs/wire-protocol.md),
 [Phase 8 adoption guide](docs/phase8-adoption.md),
-[independent usability study](docs/phase8-usability-study.md), and
-[migration guide](docs/migration-guide.md). The required independent-developer
-8/10 usability study is still open, so Phase 8 is not complete and Phase 9 has
-not started.
+[usability study protocol](docs/phase8-usability-study.md), and
+[migration guide](docs/migration-guide.md). The Phase 8 completion gate was
+amended on 2026-09-08 to a scripted clean-environment install and
+signed-delivery run (the independent-developer study was descoped; usability
+by first-time humans is unvalidated). That scripted gate is not yet
+implemented, so Phase 8 is not complete and Phase 9 has not started.
 
 ## Migrations, operations, and compatibility
 

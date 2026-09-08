@@ -549,9 +549,27 @@ sources, 142 application tests, 29 SDK tests, compilation. All commits are
 local and unpushed; defaults remain `legacy`, so no wire bytes changed for
 existing endpoints.
 
-**Completion gate: open.** At least eight of ten independent developers must
-complete the clean-machine installation and signed-delivery flow in under 30
-minutes without maintainer help. Automated tests cannot satisfy this gate.
+**Gate descope decision (2026-09-08):** the 8-of-10 independent-developer
+study is descoped. This is a solo project; no pool of independent testers is
+available, and simulating one would be worse than saying so. The human-run
+protocol in `docs/phase8-usability-study.md` and its recorder script are
+retained unchanged for optional future runs, but they are no longer the
+completion gate. No published document may claim independent-usability
+validation; documentation comprehension by a first-time human remains
+explicitly unvalidated and is recorded here as an accepted risk rather than a
+weakened invariant.
+
+**Completion gate (amended 2026-09-08): open.** A scripted clean-environment
+run must start from a fresh container or virtual environment containing only
+the public repository URL, follow `docs/phase8-adoption.md` verbatim —
+install the SDK, authenticate with `webhookctl`, create an organization,
+project, producer key, and HTTPS endpoint, send an event with a stable
+idempotency key, verify the exact-body signature in the receiver example and
+durably accept the event ID once, and inspect the delivery through the CLI —
+and pass every step unattended within a 30-minute budget. The gate passes
+when this scripted run is implemented, green, and repeatable; it validates
+the mechanical install-to-signed-delivery path, not documentation
+comprehension.
 
 ## Phase 9 — Production deployment guidance
 

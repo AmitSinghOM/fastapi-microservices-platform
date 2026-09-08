@@ -1,5 +1,13 @@
 # Phase 8 independent usability study
 
+> **Descoped 2026-09-08.** This protocol is no longer the Phase 8 completion
+> gate: the project is maintained solo and no pool of independent testers is
+> available. The gate is now a scripted clean-environment install and
+> signed-delivery run (see the action plan). This document and its recorder
+> script are retained unchanged so a human study can still be run if
+> independent testers ever become available; until then, first-time human
+> usability is unvalidated and no document claims otherwise.
+
 This protocol measures the completion gate; it does not predeclare success.
 Study result files are local evidence and must not be committed because they can
 contain operational context. The recorder creates mode-`0600` files, uses atomic

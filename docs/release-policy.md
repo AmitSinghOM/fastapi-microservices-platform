@@ -67,8 +67,10 @@ repository-wide signed-commit enforcement only after the sole owner has tested
 the complete signing path. Long-lived package-index tokens are not supported,
 and released filenames or versions are never replaced.
 
-Production publication also remains blocked until the independent Phase 8
-usability study passes its documented 8-of-10 gate. That study is product
+Production publication also remains blocked until the amended Phase 8
+completion gate passes: a scripted clean-environment install and
+signed-delivery run per the action plan (the former independent 8-of-10
+study was descoped on 2026-09-08). That gate is product
 evidence, not a second release-approver requirement. The owner must follow the
 [SDK release checklist](sdk-release-checklist.md) and
 [Phase 8 external-gate runbook](phase8-external-gates.md), including review from

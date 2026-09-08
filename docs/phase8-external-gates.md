@@ -124,5 +124,7 @@ modifying or deleting the released version.
 
 FastAPI Microservices Platform is maintained and released by one repository
 owner. No second steward or release approver is required or implied;
-independent approval is not currently guaranteed. The independent 8-of-10
-cohort remains product-usability evidence and cannot be simulated.
+independent approval is not currently guaranteed. The former independent
+8-of-10 cohort was descoped on 2026-09-08 in favor of the scripted
+clean-environment gate in the action plan; first-time human usability is
+therefore unvalidated and is stated as such rather than simulated.
