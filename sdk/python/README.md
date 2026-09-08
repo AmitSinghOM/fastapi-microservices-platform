@@ -41,3 +41,15 @@ override it for ephemeral environments. Organization, project, API-key, and
 endpoint commands cover initial setup. Producer credentials come only from
 `WEBHOOK_PLATFORM_API_KEY`. Capture one-time API keys and endpoint secrets
 directly into a secret manager.
+
+Endpoints subscribe to every event unless created with an event-type filter.
+`webhookctl endpoints create --event-type order.* --event-type user.created`
+restricts fan-out to exact types and trailing `prefix.*` wildcards; the field
+is omitted from the request when no filter is given, so the command also works
+against servers that predate subscription filtering. `webhookctl endpoints
+update` changes the URL, description, or active state, replaces the
+subscription list with repeated `--event-type` flags, or clears it with
+`--all-events`. The same operations are available programmatically through
+`ManagementClient.create_endpoint(..., event_types=...)` and
+`ManagementClient.update_endpoint`, where passing `event_types=None`
+explicitly clears the filter.

@@ -10,6 +10,10 @@ import httpx
 EnvelopeMode = Literal["native", "cloudevents"]
 QueryValue = str | int | float | bool | None
 
+# Sentinel distinguishing "argument not passed" from an explicit None,
+# which the PATCH endpoint treats as "clear this field".
+_UNSET: Any = object()
+
 
 class WebhookPlatformError(Exception):
     """Base class that never embeds credentials or response bodies."""
@@ -289,11 +293,56 @@ class ManagementClient(_JsonClient):
         project_id: str,
         url: str,
         description: str | None = None,
+        *,
+        event_types: list[str] | None = None,
     ) -> dict[str, Any]:
+        """Create an endpoint, optionally subscribed to specific types.
+
+        ``event_types`` accepts exact event types and trailing ``prefix.*``
+        wildcards. Omitting it (``None``) subscribes the endpoint to every
+        event; the field is then left off the request so the call also works
+        against servers that predate subscription filtering.
+        """
+        body: dict[str, Any] = {"url": url, "description": description}
+        if event_types is not None:
+            body["event_types"] = list(event_types)
         return self._request(
             "POST",
             f"/v1/projects/{project_id}/endpoints",
-            json={"url": url, "description": description},
+            json=body,
+        )
+
+    def update_endpoint(
+        self,
+        project_id: str,
+        endpoint_id: str,
+        *,
+        url: str = _UNSET,
+        description: str | None = _UNSET,
+        is_active: bool = _UNSET,
+        event_types: list[str] | None = _UNSET,
+    ) -> dict[str, Any]:
+        """Partially update an endpoint.
+
+        Only keyword arguments that are passed are sent, matching the API's
+        PATCH semantics. Pass ``event_types=None`` explicitly to clear a
+        subscription filter so the endpoint receives every event again.
+        """
+        changes: dict[str, Any] = {}
+        for field, value in (
+            ("url", url),
+            ("description", description),
+            ("is_active", is_active),
+            ("event_types", event_types),
+        ):
+            if value is not _UNSET:
+                changes[field] = value
+        if not changes:
+            raise ValueError("update_endpoint requires at least one change")
+        return self._request(
+            "PATCH",
+            f"/v1/projects/{project_id}/endpoints/{endpoint_id}",
+            json=changes,
         )
 
     def list_deliveries(

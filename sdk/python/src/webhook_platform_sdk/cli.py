@@ -76,6 +76,41 @@ def _parser() -> argparse.ArgumentParser:
     _add_project_id(endpoint_create)
     endpoint_create.add_argument("--url", required=True)
     endpoint_create.add_argument("--description")
+    endpoint_create.add_argument(
+        "--event-type",
+        action="append",
+        dest="event_types",
+        metavar="TYPE",
+        help=(
+            "subscribe only to this event type; repeatable; supports a "
+            "trailing 'prefix.*' wildcard; omit to receive every event"
+        ),
+    )
+    endpoint_update = endpoint_commands.add_parser("update")
+    _add_project_id(endpoint_update)
+    endpoint_update.add_argument("--endpoint", required=True)
+    endpoint_update.add_argument("--url")
+    endpoint_update.add_argument("--description")
+    endpoint_activation = endpoint_update.add_mutually_exclusive_group()
+    endpoint_activation.add_argument(
+        "--activate", action="store_true", help="reactivate the endpoint"
+    )
+    endpoint_activation.add_argument(
+        "--deactivate", action="store_true", help="deactivate the endpoint"
+    )
+    endpoint_filter = endpoint_update.add_mutually_exclusive_group()
+    endpoint_filter.add_argument(
+        "--event-type",
+        action="append",
+        dest="event_types",
+        metavar="TYPE",
+        help="replace the subscription list with these types; repeatable",
+    )
+    endpoint_filter.add_argument(
+        "--all-events",
+        action="store_true",
+        help="clear the subscription filter and receive every event",
+    )
 
     events = commands.add_parser("events")
     event_commands = events.add_subparsers(dest="action", required=True)
@@ -238,8 +273,32 @@ def _management_command(args: argparse.Namespace) -> Any:
         if args.resource == "endpoints":
             if args.action == "list":
                 return client.list_endpoints(args.project)
-            return client.create_endpoint(
-                args.project, args.url, args.description
+            if args.action == "create":
+                return client.create_endpoint(
+                    args.project,
+                    args.url,
+                    args.description,
+                    event_types=args.event_types,
+                )
+            changes: dict[str, Any] = {}
+            if args.url is not None:
+                changes["url"] = args.url
+            if args.description is not None:
+                changes["description"] = args.description
+            if args.activate:
+                changes["is_active"] = True
+            if args.deactivate:
+                changes["is_active"] = False
+            if args.all_events:
+                changes["event_types"] = None
+            elif args.event_types is not None:
+                changes["event_types"] = args.event_types
+            if not changes:
+                raise ValueError(
+                    "endpoints update requires at least one change"
+                )
+            return client.update_endpoint(
+                args.project, args.endpoint, **changes
             )
         if args.resource == "deliveries":
             if args.action == "list":
