@@ -10,6 +10,7 @@ OrganizationRole = Literal["owner", "admin", "member"]
 ProjectRole = Literal["admin", "operator", "viewer"]
 ApiKeyScope = Literal["events:write"]
 EnvelopeMode = Literal["native", "cloudevents"]
+SignatureScheme = Literal["legacy", "standard"]
 Plan = Literal["free", "standard", "enterprise"]
 
 
@@ -163,6 +164,7 @@ class EndpointCreate(BaseModel):
     url: HttpUrl
     description: str | None = Field(default=None, max_length=500)
     event_types: list[str] | None = None
+    signature_scheme: SignatureScheme = "legacy"
 
     @model_validator(mode="after")
     def normalize_event_types(self) -> "EndpointCreate":
@@ -177,12 +179,13 @@ class EndpointUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
     event_types: list[str] | None = None
+    signature_scheme: SignatureScheme | None = None
 
     @model_validator(mode="after")
     def require_valid_change(self) -> "EndpointUpdate":
         if not self.model_fields_set:
             raise ValueError("at least one field must be provided")
-        for field_name in ("url", "is_active"):
+        for field_name in ("url", "is_active", "signature_scheme"):
             if field_name in self.model_fields_set and getattr(
                 self, field_name
             ) is None:
@@ -202,10 +205,22 @@ class EndpointOut(BaseModel):
     url: str
     description: str | None
     event_types: list[str] | None
+    signature_scheme: SignatureScheme
     is_active: bool
     secret_version: int
     created_at: datetime
     updated_at: datetime
+
+
+class EndpointUpdated(EndpointOut):
+    """Update response; carries a one-time secret only on scheme change.
+
+    ``signing_secret`` is present exactly when ``signature_scheme`` changed
+    to ``standard``: the standard serialization of the endpoint's current
+    secret version, directly usable with any Standard Webhooks library.
+    """
+
+    signing_secret: str | None = None
 
 
 class EndpointCreated(EndpointOut):

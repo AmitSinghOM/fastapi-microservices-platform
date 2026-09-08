@@ -336,6 +336,10 @@ class WebhookEndpoint(Base):
         CheckConstraint(
             "secret_version >= 1", name="ck_webhook_endpoints_secret_version"
         ),
+        CheckConstraint(
+            "signature_scheme IN ('legacy', 'standard')",
+            name="ck_webhook_endpoints_signature_scheme",
+        ),
         Index(
             "ix_webhook_endpoints_project_active",
             "project_id",
@@ -356,6 +360,11 @@ class WebhookEndpoint(Base):
     # a JSON list of exact types or trailing "prefix.*" wildcards restricts
     # fan-out at acceptance time. Accepted deliveries are never re-filtered.
     event_types = Column(JSON, nullable=True)
+    # Wire signature scheme (ADR 0002): 'legacy' is today's exact bytes;
+    # 'standard' emits the Standard Webhooks header format.
+    signature_scheme = Column(
+        String(16), nullable=False, default="legacy", server_default="legacy"
+    )
     is_active = Column(Boolean, default=True, nullable=False)
     secret_version = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
@@ -457,6 +466,10 @@ class Delivery(Base):
             "signing_secret_version_snapshot >= 1",
             name="ck_deliveries_snapshot_secret_version",
         ),
+        CheckConstraint(
+            "signature_scheme_snapshot IN ('legacy', 'standard')",
+            name="ck_deliveries_snapshot_signature_scheme",
+        ),
         Index(
             "ix_deliveries_due",
             "status",
@@ -513,6 +526,11 @@ class Delivery(Base):
     endpoint_url_snapshot = Column(String(2_048), nullable=False)
     endpoint_active_snapshot = Column(Boolean, nullable=False)
     signing_secret_version_snapshot = Column(Integer, nullable=False)
+    # Signature scheme captured at acceptance (ADR 0002). Later endpoint
+    # scheme changes never re-sign accepted work; replay copies this.
+    signature_scheme_snapshot = Column(
+        String(16), nullable=False, default="legacy", server_default="legacy"
+    )
     status = Column(String(32), nullable=False)
     attempt_count = Column(Integer, default=0, nullable=False)
     next_attempt_at = Column(DateTime(timezone=True), nullable=False)

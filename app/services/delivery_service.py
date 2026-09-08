@@ -41,7 +41,9 @@ from app.security_observability import (
 from app.webhook_security import (
     UnsafeWebhookUrl,
     endpoint_secret,
+    endpoint_secret_digest,
     sign_payload,
+    sign_payload_standard,
     validate_webhook_url,
 )
 
@@ -79,6 +81,7 @@ class ClaimedDelivery:
     event_public_id: str
     event_type: str
     canonical_envelope: bytes
+    signature_scheme: str = "legacy"
     envelope_mode: str = "native"
     traceparent: str | None = None
     tracestate: str | None = None
@@ -172,6 +175,9 @@ class DeliveryService:
                             endpoint_url=delivery.endpoint_url_snapshot,
                             endpoint_secret_version=(
                                 delivery.signing_secret_version_snapshot
+                            ),
+                            signature_scheme=(
+                                delivery.signature_scheme_snapshot
                             ),
                             endpoint_active=(
                                 delivery.endpoint_active_snapshot
@@ -273,14 +279,29 @@ class DeliveryService:
                         claim.endpoint_url,
                         bool(self.settings.allow_http_webhooks),
                     )
-                    secret = endpoint_secret(
-                        self.settings.webhook_signing_key,
-                        claim.endpoint_public_id,
-                        claim.endpoint_secret_version,
-                    )
-                    timestamp, signature = sign_payload(
-                        claim.canonical_envelope, secret
-                    )
+                    if claim.signature_scheme == "standard":
+                        # ADR 0002: Standard Webhooks emission. Signed
+                        # content is id.timestamp.body; the key is the raw
+                        # derived digest, so any spec library verifies it.
+                        key = endpoint_secret_digest(
+                            self.settings.webhook_signing_key,
+                            claim.endpoint_public_id,
+                            claim.endpoint_secret_version,
+                        )
+                        timestamp, signature = sign_payload_standard(
+                            claim.event_public_id,
+                            claim.canonical_envelope,
+                            key,
+                        )
+                    else:
+                        secret = endpoint_secret(
+                            self.settings.webhook_signing_key,
+                            claim.endpoint_public_id,
+                            claim.endpoint_secret_version,
+                        )
+                        timestamp, signature = sign_payload(
+                            claim.canonical_envelope, secret
+                        )
                     async with self.client.stream(
                         "POST",
                         claim.endpoint_url,

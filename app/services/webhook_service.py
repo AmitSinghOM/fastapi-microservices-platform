@@ -58,6 +58,7 @@ from app.webhook_security import (
     canonical_json,
     digest_api_key,
     endpoint_secret,
+    endpoint_secret_standard,
     event_type_matches,
     generate_api_key,
     validate_webhook_url,
@@ -1318,6 +1319,7 @@ class WebhookService:
         url: str,
         description: str | None,
         event_types: list[str] | None = None,
+        signature_scheme: str = "legacy",
     ) -> tuple[WebhookEndpoint, str]:
         project = await authorize_project(
             self.db, user_id, project_id, Permission.ENDPOINT_MANAGE
@@ -1332,6 +1334,7 @@ class WebhookService:
             url=url,
             description=description,
             event_types=event_types,
+            signature_scheme=signature_scheme,
             is_active=True,
             secret_version=1,
             created_at=now,
@@ -1364,7 +1367,20 @@ class WebhookService:
         )
         await self.db.commit()
         await self.db.refresh(endpoint)
-        return endpoint, endpoint_secret(
+        return endpoint, self._endpoint_plaintext_secret(endpoint)
+
+    def _endpoint_plaintext_secret(self, endpoint: WebhookEndpoint) -> str:
+        """One-time secret in the serialization matching the scheme.
+
+        Both forms encode the same derived digest (ADR 0002); the standard
+        form is directly usable with Standard Webhooks libraries.
+        """
+        serialize = (
+            endpoint_secret_standard
+            if endpoint.signature_scheme == "standard"
+            else endpoint_secret
+        )
+        return serialize(
             self.settings.webhook_signing_key,
             endpoint.public_id,
             endpoint.secret_version,
@@ -1393,7 +1409,7 @@ class WebhookService:
         project_id: str,
         endpoint_id: str,
         changes: dict[str, object],
-    ) -> WebhookEndpoint:
+    ) -> tuple[WebhookEndpoint, str | None]:
         project = await authorize_project(
             self.db, user_id, project_id, Permission.ENDPOINT_MANAGE
         )
@@ -1409,6 +1425,10 @@ class WebhookService:
                 project.id,
                 exclude_endpoint_id=endpoint.id,
             )
+        scheme_became_standard = (
+            changes.get("signature_scheme") == "standard"
+            and endpoint.signature_scheme != "standard"
+        )
         now = await database_now(self.db)
         for field, value in changes.items():
             setattr(endpoint, field, value)
@@ -1426,7 +1446,15 @@ class WebhookService:
         )
         await self.db.commit()
         await self.db.refresh(endpoint)
-        return endpoint
+        # ADR 0002: moving to the standard scheme returns the standard
+        # serialization of the current secret version exactly once, so the
+        # receiver can paste it into any Standard Webhooks library.
+        one_time_secret = (
+            self._endpoint_plaintext_secret(endpoint)
+            if scheme_became_standard
+            else None
+        )
+        return endpoint, one_time_secret
 
     async def deactivate_endpoint(
         self, user_id: int, project_id: str, endpoint_id: str
@@ -1509,11 +1537,7 @@ class WebhookService:
         await self.db.refresh(endpoint)
         return (
             endpoint,
-            endpoint_secret(
-                self.settings.webhook_signing_key,
-                endpoint.public_id,
-                endpoint.secret_version,
-            ),
+            self._endpoint_plaintext_secret(endpoint),
             previous_valid_until,
         )
 
@@ -1673,6 +1697,7 @@ class WebhookService:
                     endpoint_url_snapshot=endpoint.url,
                     endpoint_active_snapshot=endpoint.is_active,
                     signing_secret_version_snapshot=(endpoint.secret_version),
+                    signature_scheme_snapshot=endpoint.signature_scheme,
                     status="pending",
                     attempt_count=0,
                     next_attempt_at=now,
@@ -1815,6 +1840,7 @@ class WebhookService:
             signing_secret_version_snapshot=(
                 original.signing_secret_version_snapshot
             ),
+            signature_scheme_snapshot=original.signature_scheme_snapshot,
             status="pending",
             attempt_count=0,
             next_attempt_at=now,

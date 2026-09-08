@@ -10,7 +10,7 @@ import json
 import secrets
 import socket
 import time
-from base64 import urlsafe_b64encode
+from base64 import b64encode, urlsafe_b64encode
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -49,6 +49,30 @@ def endpoint_secret(
     material = f"endpoint:{endpoint_public_id}:v{secret_version}".encode()
     digest = hmac.new(signing_key.encode(), material, hashlib.sha256).digest()
     return "whsec_" + urlsafe_b64encode(digest).decode().rstrip("=")
+
+
+def endpoint_secret_digest(
+    signing_key: str, endpoint_public_id: str, secret_version: int
+) -> bytes:
+    """The raw derived key bytes shared by both secret serializations."""
+    material = f"endpoint:{endpoint_public_id}:v{secret_version}".encode()
+    return hmac.new(signing_key.encode(), material, hashlib.sha256).digest()
+
+
+def endpoint_secret_standard(
+    signing_key: str, endpoint_public_id: str, secret_version: int
+) -> str:
+    """Standard Webhooks serialization: ``whsec_`` + padded base64.
+
+    Any Standard Webhooks library decodes the base64 after the prefix and
+    uses the resulting bytes as the HMAC key, so this string is directly
+    usable with the spec's ecosystem. The ``legacy`` serialization encodes
+    the same digest but is itself the key material as an ASCII string.
+    """
+    digest = endpoint_secret_digest(
+        signing_key, endpoint_public_id, secret_version
+    )
+    return "whsec_" + b64encode(digest).decode()
 
 
 def canonical_json(value: Any) -> bytes:
@@ -92,6 +116,27 @@ def sign_payload(
     signed = str(timestamp).encode("ascii") + b"." + payload_bytes
     digest = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
     return timestamp, f"t={timestamp},v1={digest}"
+
+
+def sign_payload_standard(
+    event_id: str,
+    payload_bytes: bytes,
+    key: bytes,
+    timestamp: int | None = None,
+) -> tuple[int, str]:
+    """Standard Webhooks signature: ``v1,<base64>``.
+
+    Signed content is ``event_id.timestamp.body`` and the HMAC key is the
+    raw derived digest, matching the specification exactly so any Standard
+    Webhooks library verifies the result. Event IDs are UUIDs and
+    timestamps are integers, so neither can contain the ``.`` delimiter.
+    """
+    timestamp = timestamp if timestamp is not None else int(time.time())
+    signed = (
+        f"{event_id}.{timestamp}.".encode("ascii") + payload_bytes
+    )
+    digest = hmac.new(key, signed, hashlib.sha256).digest()
+    return timestamp, "v1," + b64encode(digest).decode()
 
 
 def _require_global(address: str) -> None:

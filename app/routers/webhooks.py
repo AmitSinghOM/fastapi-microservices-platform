@@ -26,6 +26,7 @@ from app.schemas.webhooks import (
     EndpointRuntimeOut,
     EndpointSecretRotated,
     EndpointUpdate,
+    EndpointUpdated,
     EventCreate,
     EventOut,
     MemberCreate,
@@ -465,7 +466,7 @@ async def create_endpoint(
 ):
     endpoint, secret = await service.create_endpoint(
         user.id, project_id, str(body.url), body.description,
-        body.event_types,
+        body.event_types, body.signature_scheme,
     )
     data = EndpointOut.model_validate(endpoint).model_dump()
     return EndpointCreated(**data, signing_secret=secret)
@@ -485,7 +486,7 @@ async def list_endpoints(
 
 @router.patch(
     "/projects/{project_id}/endpoints/{endpoint_id}",
-    response_model=EndpointOut,
+    response_model=EndpointUpdated,
 )
 async def update_endpoint(
     project_id: str,
@@ -497,9 +498,11 @@ async def update_endpoint(
     changes = body.model_dump(exclude_unset=True)
     if changes.get("url") is not None:
         changes["url"] = str(changes["url"])
-    return await service.update_endpoint(
+    endpoint, one_time_secret = await service.update_endpoint(
         user.id, project_id, endpoint_id, changes
     )
+    data = EndpointOut.model_validate(endpoint).model_dump()
+    return EndpointUpdated(**data, signing_secret=one_time_secret)
 
 
 @router.delete(
