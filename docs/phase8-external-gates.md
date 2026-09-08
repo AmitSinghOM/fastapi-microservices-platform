@@ -38,9 +38,9 @@ normal reviewed process.
    commit, then verify the completed run's `head_sha` equals the candidate SHA.
    Container remains a manual Phase 8 evidence gate rather than an SDK workflow
    enforcement step.
-5. Record and freeze the immutable full commit SHA. Do not change code or
-   participant instructions during the cohort; material changes require a new
-   signed candidate, hosted validation, frozen SHA, and cohort.
+5. Record and freeze the immutable full commit SHA. Do not change code after
+   the freeze; material changes require a new signed candidate, hosted
+   validation, and a fresh frozen SHA.
 6. Confirm `sdk/python/pyproject.toml` version `0.1.0` corresponds to the planned
    signed annotated tag `sdk-v0.1.0`.
 
@@ -64,24 +64,26 @@ These are high-impact remote security settings. Apply them only after final
 workflows are committed and signing is proven, or the sole owner may be locked
 out.
 
-## 4. Run the independent cohort
+## 4. Pass the scripted clean-machine gate
 
-Recruit ten developers satisfying `phase8-usability-study.md`. Give each only
-the frozen public commit, `phase8-adoption.md`, and non-production access.
-Schedule individually, prohibit maintainer help after timing starts, and record
-all attempts—including failures—in one access-controlled mode-`0600` study
-file. Never commit participant records or store names, contacts, credentials,
-URLs, payloads, or receiver bodies.
+Run the amended Phase 8 completion gate against the frozen candidate
+(the 8-of-10 independent cohort was descoped on 2026-09-08; the human
+protocol in `phase8-usability-study.md` remains available for optional
+future runs and its recorder is unchanged):
 
-Invitation template: “Evaluate a pre-release event-delivery workflow in a clean
-environment. Plan for a 45-minute observed session; the measured task is
-strictly under 30 minutes. No implementation experience is required. Results
-are recorded under a pseudonymous ID without credentials or payload data.”
+```bash
+python scripts/phase8_clean_machine_gate.py --report /secure/path/gate.json
+```
 
-Run the recorder's `report` command. Continue only when ten eligible independent
-runs exist and at least eight passed strictly under 30 minutes without help. A
-failed gate requires fixes and a new independent cohort; never reclassify or
-replace evidence.
+The run must start from a fresh clone and virtual environment, complete
+every step of the adoption flow unattended — install, authentication,
+organization/project/key/endpoint creation, a signed event, worker
+delivery to `succeeded`, exactly-once durable receiver acceptance, and CLI
+inspection — and exit zero within its 30-minute budget. Retain the JSON
+report (step names and durations only; it contains no secrets) in
+access-controlled release evidence. Continue only on a passing,
+repeatable run against the exact frozen SHA; a failure requires fixes and
+a new signed candidate.
 
 ## 5. Release to TestPyPI and cool off
 
