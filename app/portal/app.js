@@ -222,13 +222,21 @@ byId("endpoint-form").addEventListener("submit", (event) => {
   run(async () => {
     if (!state.project) throw new Error("Select a project first.");
     const description = formValue(form, "description");
+    // Comma-separated filters; an empty field means "receive every event"
+    // and the key is omitted entirely (null also means unfiltered).
+    const eventTypes = formValue(form, "event_types")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    const body = {
+      url: formValue(form, "url"),
+      description: description || null,
+      signature_scheme: formValue(form, "signature_scheme") || "legacy",
+    };
+    if (eventTypes.length > 0) body.event_types = eventTypes;
     return api(`/v1/projects/${encodeURIComponent(state.project)}/endpoints`, {
       method: "POST",
-      json: {
-        url: formValue(form, "url"),
-        description: description || null,
-        signature_scheme: formValue(form, "signature_scheme") || "legacy",
-      },
+      json: body,
     });
   }, "Endpoint created. Store the signing secret, then clear the result.");
 });

@@ -77,6 +77,10 @@
           <h2>4. Endpoint</h2>
           <label>HTTPS URL <input name="url" type="url" required></label>
           <label>Description <input name="description" maxlength="500"></label>
+          <label>Event types
+            <input name="event_types"
+              placeholder="order.*, user.created (empty = all events)">
+          </label>
           <label>Signature scheme
             <select name="signature_scheme">
               <option value="legacy" selected>legacy (t=…,v1=hex)</option>
@@ -85,7 +89,8 @@
           </label>
           <p class="hint">
             standard works with any Standard Webhooks library; the one-time
-            secret below matches the chosen scheme.
+            secret below matches the chosen scheme. Event types accept exact
+            names and trailing "prefix.*" wildcards, comma-separated.
           </p>
           <button>Create endpoint</button>
         </form>

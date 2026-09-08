@@ -146,3 +146,15 @@ async def test_portal_exposes_signature_scheme(client: AsyncClient):
     assert '<option value="legacy" selected>' in page.text
     assert '<option value="standard">' in page.text
     assert "signature_scheme" in script.text
+
+
+@pytest.mark.asyncio
+async def test_portal_exposes_event_type_filters(client: AsyncClient):
+    """The endpoint form accepts comma-separated event-type filters."""
+    page = await client.get("/portal")
+    script = await client.get("/portal/app.js")
+
+    assert 'name="event_types"' in page.text
+    assert "event_types" in script.text
+    # An empty field must omit the key (unfiltered), not send [].
+    assert "eventTypes.length > 0" in script.text
