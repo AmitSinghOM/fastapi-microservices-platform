@@ -108,21 +108,55 @@ jobs:
             --argjson current "$GITHUB_RUN_ID" \
             '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch and .id != $current)] | sort_by(.created_at) | reverse | .[].id')
           ARTIFACT_NAME="${RELEASE_TAG}-candidate"
+          STEM="fastapi_microservices_platform_sdk-${RELEASE_VERSION}"
           for RUN_ID in $RUN_IDS; do
             ARTIFACTS=$(gh api \
               "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts")
             ARTIFACT_ID=$(printf '%s' "$ARTIFACTS" | jq -r \
               --arg name "$ARTIFACT_NAME" \
               '[.artifacts[] | select(.name == $name and .expired == false)] | first | .id // empty')
-            if [[ -n "$ARTIFACT_ID" ]]; then
-              gh api \
-                "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
-                > "$RUNNER_TEMP/release-candidate.zip"
-              unzip -q "$RUNNER_TEMP/release-candidate.zip" -d sdk/python
+            if [[ -z "$ARTIFACT_ID" ]]; then
+              continue
+            fi
+            gh api \
+              "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
+              > "$RUNNER_TEMP/release-candidate.zip"
+            CANDIDATE_DIR="$RUNNER_TEMP/restored-candidate"
+            rm -rf "$CANDIDATE_DIR"
+            mkdir -p "$CANDIDATE_DIR/dist"
+            if ! unzip -p "$RUNNER_TEMP/release-candidate.zip" \
+              "dist/${STEM}-py3-none-any.whl" \
+              > "$CANDIDATE_DIR/dist/${STEM}-py3-none-any.whl" \
+              || ! unzip -p "$RUNNER_TEMP/release-candidate.zip" \
+              "dist/${STEM}.tar.gz" \
+              > "$CANDIDATE_DIR/dist/${STEM}.tar.gz" \
+              || ! unzip -p "$RUNNER_TEMP/release-candidate.zip" SHA256SUMS \
+              > "$CANDIDATE_DIR/SHA256SUMS"; then
+              echo "Candidate artifact from workflow run $RUN_ID is malformed"
+              continue
+            fi
+            if ! (
+              cd "$CANDIDATE_DIR/dist"
+              sha256sum --check ../SHA256SUMS
+              sha256sum -- *.whl *.tar.gz > ../CURRENT_SHA256SUMS
+            ) || ! cmp \
+              "$CANDIDATE_DIR/SHA256SUMS" \
+              "$CANDIDATE_DIR/CURRENT_SHA256SUMS"; then
+              echo "Candidate artifact from workflow run $RUN_ID is inconsistent"
+              continue
+            fi
+            rm "$CANDIDATE_DIR/CURRENT_SHA256SUMS"
+            if python scripts/release_registry.py preflight \
+              --repository testpypi \
+              --version "$RELEASE_VERSION" \
+              --dist-dir "$CANDIDATE_DIR/dist"; then
+              mv "$CANDIDATE_DIR/dist" sdk/python/dist
+              mv "$CANDIDATE_DIR/SHA256SUMS" sdk/python/SHA256SUMS
               echo "RESTORED_RELEASE_CANDIDATE=true" >> "$GITHUB_ENV"
-              echo "Restored candidate artifacts from workflow run $RUN_ID"
+              echo "Restored matching candidate from workflow run $RUN_ID"
               break
             fi
+            echo "Candidate from workflow run $RUN_ID does not match registry state"
           done
       - name: Build and hash new distributions
         if: env.RESTORED_RELEASE_CANDIDATE != 'true'

@@ -516,6 +516,16 @@ GitHub checks confirm no rulesets or deployment environments currently exist,
 and local Git has no signing key/default configured. No package, tag, remote
 setting, or participant result was created.
 
+**Phase 8 unsigned hosted checkpoint (2026-09-01):** Commit `d321e67` is on
+`origin/main`; exact-SHA CI run `33442341800` and Container run `33442341746`
+both passed. GitHub reports the commit signature status as `unsigned`, and no
+local signing key or signed-commit default is configured. The commit therefore
+is not the frozen Phase 8 release candidate despite its green checks and must
+not receive the SDK release tag. The local follow-up scans retained TestPyPI
+candidates newest-first and restores only bytes that match existing registry
+state; it remains uncommitted and requires a future signed fix-forward candidate
+plus new exact-SHA hosted validation. No remote history was rewritten.
+
 **Completion gate: open.** At least eight of ten independent developers must
 complete the clean-machine installation and signed-delivery flow in under 30
 minutes without maintainer help. Automated tests cannot satisfy this gate.
