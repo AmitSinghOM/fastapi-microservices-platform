@@ -183,8 +183,10 @@ async def test_crash_after_http_can_redeliver_same_event(
     delivery_id = await seed_delivery(sqlite_session_factory)
     calls: list[str] = []
 
-    async def allow_test_target(url: str, allow_http: bool = False) -> str:
-        del allow_http
+    async def allow_test_target(
+        url: str, allow_http: bool = False, allow_private: bool = False
+    ) -> str:
+        del allow_http, allow_private
         return url
 
     def receiver(request: httpx.Request) -> httpx.Response:

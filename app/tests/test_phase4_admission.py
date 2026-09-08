@@ -50,8 +50,10 @@ async def api_project_key(client: httpx.AsyncClient, headers: dict[str, str]):
     return project.json()["public_id"], key.json()["plaintext_key"]
 
 
-async def allow_target(url: str, allow_http: bool = False) -> str:
-    del allow_http
+async def allow_target(
+    url: str, allow_http: bool = False, allow_private: bool = False
+) -> str:
+    del allow_http, allow_private
     return url
 
 

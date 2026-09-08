@@ -177,8 +177,10 @@ async def test_worker_emits_spec_exact_headers(
     del db_session
     captured: list[httpx.Request] = []
 
-    async def allow_test_target(url: str, allow_http: bool = False) -> str:
-        del allow_http
+    async def allow_test_target(
+        url: str, allow_http: bool = False, allow_private: bool = False
+    ) -> str:
+        del allow_http, allow_private
         return url
 
     monkeypatch.setattr(
@@ -248,8 +250,10 @@ async def test_worker_legacy_emission_unchanged(
     del db_session
     captured: list[httpx.Request] = []
 
-    async def allow_test_target(url: str, allow_http: bool = False) -> str:
-        del allow_http
+    async def allow_test_target(
+        url: str, allow_http: bool = False, allow_private: bool = False
+    ) -> str:
+        del allow_http, allow_private
         return url
 
     monkeypatch.setattr(

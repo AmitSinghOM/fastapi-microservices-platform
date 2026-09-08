@@ -121,8 +121,10 @@ async def test_claim_uses_immutable_acceptance_snapshots(
             assert event is not None
             event.payload = {"value": "mutated"}
 
-    async def allow_target(url: str, allow_http: bool = False) -> str:
-        del allow_http
+    async def allow_target(
+        url: str, allow_http: bool = False, allow_private: bool = False
+    ) -> str:
+        del allow_http, allow_private
         return url
 
     captured: list[httpx.Request] = []
@@ -301,8 +303,10 @@ async def test_long_request_renews_lease_while_in_flight(
     del db_session
     await seed_delivery(sqlite_session_factory)
 
-    async def allow_target(url: str, allow_http: bool = False) -> str:
-        del allow_http
+    async def allow_target(
+        url: str, allow_http: bool = False, allow_private: bool = False
+    ) -> str:
+        del allow_http, allow_private
         return url
 
     two_renewals = asyncio.Event()

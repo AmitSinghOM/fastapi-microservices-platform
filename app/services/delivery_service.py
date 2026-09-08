@@ -278,6 +278,7 @@ class DeliveryService:
                     await validate_webhook_url(
                         claim.endpoint_url,
                         bool(self.settings.allow_http_webhooks),
+                        bool(self.settings.allow_private_webhooks),
                     )
                     if claim.signature_scheme == "standard":
                         # ADR 0002: Standard Webhooks emission. Signed

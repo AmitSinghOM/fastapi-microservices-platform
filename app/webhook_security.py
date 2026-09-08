@@ -153,11 +153,18 @@ def _require_global(address: str) -> None:
         )
 
 
-async def validate_webhook_url(url: str, allow_http: bool = False) -> str:
+async def validate_webhook_url(
+    url: str, allow_http: bool = False, allow_private: bool = False
+) -> str:
     """Resolve every answer and validate a target immediately before send.
 
     The dedicated egress proxy repeats destination resolution and network
     policy enforcement after this defense-in-depth application check.
+
+    ``allow_private`` is a development-only escape hatch (enforced at
+    configuration load): it permits localhost and non-global targets so the
+    local quick-start receiver can complete a signed delivery. Scheme,
+    credential, fragment, length, and DNS-resolvability checks still apply.
     """
     if len(url) > 2_048:
         raise UnsafeWebhookUrl(
@@ -197,7 +204,9 @@ async def validate_webhook_url(url: str, allow_http: bool = False) -> str:
             SecurityDenyReason.PORT_NOT_ALLOWED,
         )
     hostname = parsed.hostname.rstrip(".").lower()
-    if hostname == "localhost" or hostname.endswith(".localhost"):
+    if not allow_private and (
+        hostname == "localhost" or hostname.endswith(".localhost")
+    ):
         raise UnsafeWebhookUrl(
             "Localhost webhook targets are not allowed",
             SecurityDenyReason.LOCALHOST_FORBIDDEN,
@@ -205,6 +214,11 @@ async def validate_webhook_url(url: str, allow_http: bool = False) -> str:
     try:
         _require_global(hostname)
         return url
+    except UnsafeWebhookUrl:
+        # The hostname is a literal non-global IP address.
+        if allow_private:
+            return url
+        raise
     except ValueError:
         pass
     try:
@@ -225,6 +239,7 @@ async def validate_webhook_url(url: str, allow_http: bool = False) -> str:
             "Webhook host did not resolve",
             SecurityDenyReason.DNS_UNRESOLVED,
         )
-    for address in addresses:
-        _require_global(str(address))
+    if not allow_private:
+        for address in addresses:
+            _require_global(str(address))
     return url

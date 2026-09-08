@@ -1292,7 +1292,9 @@ class WebhookService:
     async def _validate_endpoint_url(self, url: str) -> None:
         try:
             await validate_webhook_url(
-                url, bool(self.settings.allow_http_webhooks)
+                url,
+                bool(self.settings.allow_http_webhooks),
+                bool(self.settings.allow_private_webhooks),
             )
         except UnsafeWebhookUrl as exc:
             record_security_deny(SecurityLayer.ADMISSION, exc.reason)

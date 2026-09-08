@@ -72,8 +72,10 @@ async def test_cloudevents_delivery_uses_structured_media_type(
     sqlite_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ):
-    async def allow_target(url: str, allow_http: bool = False) -> str:
-        del allow_http
+    async def allow_target(
+        url: str, allow_http: bool = False, allow_private: bool = False
+    ) -> str:
+        del allow_http, allow_private
         return url
 
     requests: list[httpx.Request] = []

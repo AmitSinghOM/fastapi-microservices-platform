@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     webhook_signing_key: str = ""
     access_token_expire_minutes: int = Field(default=30, ge=1, le=1440)
     allow_http_webhooks: bool | None = None
+    # Development-only: permit localhost/non-global webhook targets so the
+    # local quick-start receiver can complete a signed delivery. Unlike
+    # allow_http_webhooks this never defaults on, because it relaxes the
+    # SSRF boundary; configuration load refuses it outside development.
+    allow_private_webhooks: bool = False
 
     allowed_hosts: list[str] = ["localhost", "127.0.0.1", "test", "testserver"]
     cors_origins: list[str] = []
@@ -194,6 +199,11 @@ class Settings(BaseSettings):
         elif self.allow_http_webhooks and self.environment != "development":
             raise ValueError(
                 "ALLOW_HTTP_WEBHOOKS may be true only in development"
+            )
+
+        if self.allow_private_webhooks and self.environment != "development":
+            raise ValueError(
+                "ALLOW_PRIVATE_WEBHOOKS may be true only in development"
             )
 
         if not self.worker_egress_proxy_url:

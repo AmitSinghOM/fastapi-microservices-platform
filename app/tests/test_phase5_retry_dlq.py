@@ -36,8 +36,10 @@ def align_api_key_settings(monkeypatch: pytest.MonkeyPatch):
     )
 
 
-async def allow_target(url: str, allow_http: bool = False) -> str:
-    del allow_http
+async def allow_target(
+    url: str, allow_http: bool = False, allow_private: bool = False
+) -> str:
+    del allow_http, allow_private
     return url
 
 

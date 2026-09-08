@@ -168,8 +168,10 @@ def test_worker_client_pins_proxy_and_disables_bypasses(
 async def test_proxy_connect_rejection_is_sanitized_and_counted(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    async def allow_target(url: str, allow_http: bool = False) -> str:
-        del allow_http
+    async def allow_target(
+        url: str, allow_http: bool = False, allow_private: bool = False
+    ) -> str:
+        del allow_http, allow_private
         return url
 
     def reject(request: httpx.Request) -> httpx.Response:
@@ -194,8 +196,10 @@ async def test_proxy_connect_rejection_is_sanitized_and_counted(
 
 @pytest.mark.asyncio
 async def test_redirect_is_not_followed(monkeypatch: pytest.MonkeyPatch):
-    async def allow_target(url: str, allow_http: bool = False) -> str:
-        del allow_http
+    async def allow_target(
+        url: str, allow_http: bool = False, allow_private: bool = False
+    ) -> str:
+        del allow_http, allow_private
         return url
 
     requests: list[httpx.Request] = []
