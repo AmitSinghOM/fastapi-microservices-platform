@@ -64,6 +64,48 @@ uvicorn app:app --port 9000
 Production endpoints must be public HTTPS targets behind the required network
 boundary; local HTTP is development-only.
 
+### Verifying without the Python SDK
+
+Endpoints using the `standard` signature scheme (see
+[the wire protocol](wire-protocol.md)) are verified by any
+[Standard Webhooks](https://github.com/standard-webhooks/standard-webhooks)
+library — no platform-specific code is needed. Pass the exact raw request
+bytes and the request headers; the secret is the one-time endpoint secret
+(the base64 value after the `whsec_` prefix).
+
+Python (`pip install standardwebhooks`):
+
+```python
+from standardwebhooks.webhooks import Webhook
+
+wh = Webhook(endpoint_secret)  # accepts the full "whsec_..." string
+event = wh.verify(raw_body, headers)
+```
+
+JavaScript/TypeScript (`npm install standardwebhooks`):
+
+```javascript
+import { Webhook } from "standardwebhooks";
+
+const wh = new Webhook(base64Secret);
+const event = wh.verify(rawBody, headers);
+```
+
+Go (`go get github.com/standard-webhooks/standard-webhooks/libraries/go`):
+
+```go
+import standardwebhooks "github.com/standard-webhooks/standard-webhooks/libraries/go"
+
+wh, err := standardwebhooks.NewWebhook(base64Secret)
+err = wh.Verify(rawBody, headers)
+```
+
+Java, Ruby, PHP, Rust, C#, and Elixir libraries exist in the same
+repository with equivalent `verify(payload, headers)` shapes. Endpoints on
+the default `legacy` scheme must instead follow the manual rules in
+[the wire protocol](wire-protocol.md) or use this SDK's `verify_request`,
+which auto-detects both schemes.
+
 ## Transactional outbox
 
 Install `./sdk/python[outbox]`. In the transaction that changes application

@@ -227,6 +227,14 @@ independent DNS and network policy. See
 [the Phase 3 boundary](docs/phase3-egress-boundary.md) for the deny corpus and
 validation procedure.
 
+Because every delivery leaves through that single egress proxy, giving the
+proxy (or its NAT gateway) one or more static public IPs gives the platform a
+static-source-IP story: receivers behind corporate firewalls can allowlist
+those addresses and reject webhook traffic from anywhere else. This is a
+deployment property, not application configuration — publish the egress
+addresses to your receivers and keep them stable across scaling events, since
+workers themselves never connect out directly.
+
 ## Observability and bounded autoscaling
 
 The API exports Prometheus text at `/metrics`; the worker exposes the same
@@ -286,6 +294,11 @@ implicitly. Receiver helpers verify timestamped HMAC signatures over exact body
 bytes before parsing and support a pluggable durable event-ID claim. Optional
 `cloudevents` mode emits CloudEvents 1.0 structured JSON while `native` remains
 the unchanged default. Runnable producer and durable-inbox receiver examples are under `examples/`.
+The transactional outbox relay is deliberately this platform's answer to
+broker-ingest features elsewhere: instead of consuming Kafka/SQS/RabbitMQ
+topics, enqueue the event in the same database transaction as your business
+write and let the relay deliver it with the same idempotency key — which
+keeps exactly-one-enqueue semantics that broker bridges cannot offer.
 The dependency-free same-origin portal at `/portal` supports initial setup,
 test events, delivery inspection, and replay without persisting bearer tokens
 in browser storage. Disable it with `PORTAL_ENABLED=false` when operators use
