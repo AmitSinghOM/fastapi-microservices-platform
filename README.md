@@ -294,11 +294,12 @@ only the API and CLI.
 See [the wire protocol](docs/wire-protocol.md),
 [Phase 8 adoption guide](docs/phase8-adoption.md),
 [usability study protocol](docs/phase8-usability-study.md), and
-[migration guide](docs/migration-guide.md). The Phase 8 completion gate was
-amended on 2026-09-08 to a scripted clean-environment install and
-signed-delivery run (the independent-developer study was descoped; usability
-by first-time humans is unvalidated). That scripted gate is not yet
-implemented, so Phase 8 is not complete and Phase 9 has not started.
+[migration guide](docs/migration-guide.md). The amended Phase 8 completion
+gate — a scripted clean-environment install and signed-delivery run
+(`scripts/phase8_clean_machine_gate.py`) — passed on 2026-09-08; the former
+independent-developer study was descoped, so first-time human usability
+remains unvalidated. The signed release candidate and package-index
+publication are still outstanding, so Phase 9 has not started.
 
 ## Migrations, operations, and compatibility
 

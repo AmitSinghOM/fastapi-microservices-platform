@@ -571,6 +571,32 @@ when this scripted run is implemented, green, and repeatable; it validates
 the mechanical install-to-signed-delivery path, not documentation
 comprehension.
 
+**Scripted gate evidence (2026-09-08):**
+`scripts/phase8_clean_machine_gate.py` implements the amended gate with
+stdlib only: fresh `git clone`, fresh virtual environment, `pip install` of
+the platform requirements, SDK, and receiver example, API readiness on
+`/readyz`, `webhookctl` registration/login via prompted passwords,
+organization/project/producer-key creation, a `standard`-scheme endpoint
+whose one-time secret feeds the example receiver, a signed event with a
+stable idempotency key, a real `python -m app.worker` run to a `succeeded`
+delivery, an exactly-one-row check of the receiver's durable inbox, and CLI
+delivery/attempt inspection. The run uses `ENVIRONMENT=development` with the
+new `ALLOW_PRIVATE_WEBHOOKS` flag (default off, refused outside development
+at configuration load) so the local receiver is a permitted target; the SSRF
+corpus passes unchanged with the flag off. Enabling this run also fixed a
+real quick-start defect: the receiver example's requirements file only
+installs from its own directory, exactly as its README says, and the
+documented local flow could never complete before the flag existed. Two
+consecutive unattended runs passed all steps in 33.8 s and 31.9 s against
+the 1,800 s budget, with JSON step-timing reports containing no secrets.
+
+**Completion gate: passed on 2026-09-08 (as amended).** The scripted
+clean-machine run is implemented, green, and repeatable. First-time human
+documentation comprehension remains explicitly unvalidated per the descope
+decision. The external release steps (signed candidate, package-index
+publication) remain governed by the release policy and external-gate
+runbook and are not satisfied by this gate.
+
 ## Phase 9 — Production deployment guidance
 
 **Purpose:** provide a safe reference deployment for the first real users.
