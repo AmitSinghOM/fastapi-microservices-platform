@@ -305,6 +305,7 @@ in browser storage. Disable it with `PORTAL_ENABLED=false` when operators use
 only the API and CLI.
 
 See [the wire protocol](docs/wire-protocol.md),
+[benchmarks and evidence](docs/benchmarks.md),
 [Phase 8 adoption guide](docs/phase8-adoption.md),
 [usability study protocol](docs/phase8-usability-study.md), and
 [migration guide](docs/migration-guide.md). The amended Phase 8 completion
