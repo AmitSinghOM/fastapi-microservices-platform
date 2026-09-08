@@ -1,7 +1,14 @@
 # ADR 0002: Standard Webhooks alignment as a versioned wire change
 
-- Status: Proposed
-- Date: 2026-09-08
+- Status: Accepted; phase one (3.x) implemented on 2026-09-08. All five
+  acceptance gates hold: golden vectors and the official `standardwebhooks`
+  cross-verification live in `app/tests/test_signature_scheme.py`, legacy
+  emission is regression-locked, the SDK receiver auto-detects both schemes
+  and ignores unknown tokens (`sdk/python/tests/test_receiver_schemes.py`),
+  and the threat model records the scheme-downgrade threat and invariants.
+  The 4.0 default change for new endpoints and the 5.0 legacy refusal
+  remain open per the version staging table.
+- Date: 2026-09-08 (proposed and phase one implemented)
 - Decision owner: repository owner
 - Reference: [Standard Webhooks specification](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md)
 

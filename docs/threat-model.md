@@ -47,7 +47,8 @@ compromised dependencies or workers, and operators making mistakes.
 | Cross-tenant object access | Disclosure or modification | Organization/project role matrix; tenant-hiding `404`; visible denial `403` | Extend the matrix with every future management route |
 | API/JWT theft | Unauthorized ingestion or administration | Digests, peppers, revocation, bounded JWT life, scoped expiring API keys, overlap rotation, immutable audit | Add staged root/pepper rotation tooling |
 | Portal XSS or browser credential exposure | Administrative takeover or leaked one-time secrets | Same-origin external assets; strict CSP without inline/third-party code; text-only rendering; no bearer browser storage; password/API-key field clearing | A compromised browser, extension, host, or same-origin service remains trusted; operators must use HTTPS and avoid session recording |
-| Forged webhook | Receiver accepts attacker data | HMAC over timestamp and exact bytes; versioned secrets with bounded verification overlap | Receiver SDK in Phase 8 |
+| Forged webhook | Receiver accepts attacker data | HMAC-SHA256 over timestamp and exact bytes (`legacy`) or over event ID, timestamp, and exact bytes (`standard`, per Standard Webhooks); versioned secrets with bounded verification overlap | Receiver SDK in Phase 8 |
+| Signature scheme downgrade or mismatch | Receiver verification breaks (delivery outage) or loses event-ID binding (`legacy` does not bind `Webhook-Id` into the signature) | Scheme changes require the endpoint-manage role and append an immutable `endpoint.updated` audit event listing `changed_fields`; deliveries snapshot the scheme at acceptance so accepted and replayed work is never re-signed; both schemes remain HMAC-SHA256 over exact bytes; the one-time secret is returned only when switching to `standard` | Receivers that require ID binding should pin the expected scheme and alert on format changes; revisit when 4.0 changes the default for new endpoints (ADR 0002) |
 | Replay or duplicate | Repeated business action | Stable event ID; documented at-least-once contract; shared quotas and audited replay | Receiver deduplication remains required |
 | Idempotency race | Duplicate event/fan-out | Unique constraint and conflict handling | Continue PostgreSQL stress coverage |
 | Lease theft/stale write | Duplicate or corrupt outcome | Skip-locked claims and token finalization | Heartbeats and slot-aware claims |
@@ -75,7 +76,12 @@ before broad multi-tenant production claims.
 - Event and initial delivery rows commit atomically.
 - Outbound HTTP never occurs inside a database transaction.
 - A finalization requires the current processing state and matching lease token.
-- Plaintext API keys and signing secrets are returned only at creation/rotation.
+- Plaintext API keys and signing secrets are returned only at creation/rotation
+  and on an endpoint's switch to the `standard` signature scheme (the standard
+  serialization of the same derived digest, disclosed exactly once).
+- An endpoint's signature scheme is captured on every delivery at acceptance;
+  changing the scheme requires the endpoint-manage role, appends an immutable
+  audit event, and never alters the signature of accepted or replayed work.
 - The optional portal stores bearer tokens only in page memory and renders API
   output through text nodes under a same-origin, no-inline-content CSP.
 - Secrets, authorization headers, complete payloads, and complete responses are
