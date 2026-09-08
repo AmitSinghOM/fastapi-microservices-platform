@@ -77,6 +77,16 @@
           <h2>4. Endpoint</h2>
           <label>HTTPS URL <input name="url" type="url" required></label>
           <label>Description <input name="description" maxlength="500"></label>
+          <label>Signature scheme
+            <select name="signature_scheme">
+              <option value="legacy" selected>legacy (t=…,v1=hex)</option>
+              <option value="standard">standard (Standard Webhooks)</option>
+            </select>
+          </label>
+          <p class="hint">
+            standard works with any Standard Webhooks library; the one-time
+            secret below matches the chosen scheme.
+          </p>
           <button>Create endpoint</button>
         </form>
       </section>

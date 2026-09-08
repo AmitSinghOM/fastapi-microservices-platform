@@ -132,3 +132,15 @@ async def test_portal_assets_are_same_origin_and_csp_guarded(
     assert 'src="/portal/app.js"' in page.text
     assert "localStorage" not in script.text
     assert "sessionStorage" not in script.text
+
+
+@pytest.mark.asyncio
+async def test_portal_exposes_signature_scheme(client: AsyncClient):
+    """The endpoint form offers both schemes and sends the selection."""
+    page = await client.get("/portal")
+    script = await client.get("/portal/app.js")
+
+    assert 'name="signature_scheme"' in page.text
+    assert '<option value="legacy" selected>' in page.text
+    assert '<option value="standard">' in page.text
+    assert "signature_scheme" in script.text

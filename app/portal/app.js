@@ -227,6 +227,7 @@ byId("endpoint-form").addEventListener("submit", (event) => {
       json: {
         url: formValue(form, "url"),
         description: description || null,
+        signature_scheme: formValue(form, "signature_scheme") || "legacy",
       },
     });
   }, "Endpoint created. Store the signing secret, then clear the result.");
