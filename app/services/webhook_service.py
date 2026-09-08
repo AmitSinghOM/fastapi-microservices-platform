@@ -58,6 +58,7 @@ from app.webhook_security import (
     canonical_json,
     digest_api_key,
     endpoint_secret,
+    event_type_matches,
     generate_api_key,
     validate_webhook_url,
 )
@@ -1311,7 +1312,12 @@ class WebhookService:
         return endpoint
 
     async def create_endpoint(
-        self, user_id: int, project_id: str, url: str, description: str | None
+        self,
+        user_id: int,
+        project_id: str,
+        url: str,
+        description: str | None,
+        event_types: list[str] | None = None,
     ) -> tuple[WebhookEndpoint, str]:
         project = await authorize_project(
             self.db, user_id, project_id, Permission.ENDPOINT_MANAGE
@@ -1325,6 +1331,7 @@ class WebhookService:
             project_id=project.id,
             url=url,
             description=description,
+            event_types=event_types,
             is_active=True,
             secret_version=1,
             created_at=now,
@@ -1597,14 +1604,20 @@ class WebhookService:
                 "data": payload,
             }
         canonical_envelope = canonical_json(envelope)
-        endpoints = list(
-            await self.db.scalars(
+        # Fan out only to endpoints subscribed to this event type; a NULL
+        # filter receives everything. Filtering happens before admission so
+        # quotas charge for deliveries actually created, and the surviving
+        # deliveries snapshot exactly as before.
+        endpoints = [
+            endpoint
+            for endpoint in await self.db.scalars(
                 select(WebhookEndpoint).where(
                     WebhookEndpoint.project_id == project_id,
                     WebhookEndpoint.is_active.is_(True),
                 )
             )
-        )
+            if event_type_matches(event_type, endpoint.event_types)
+        ]
         await controller.admit_event_locked(
             tenant_state,
             now,

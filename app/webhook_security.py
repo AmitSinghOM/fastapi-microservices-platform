@@ -62,6 +62,29 @@ def canonical_json(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def event_type_matches(event_type: str, patterns: object) -> bool:
+    """Decide whether an endpoint subscription list accepts an event type.
+
+    ``None`` (no filter) accepts everything. A list accepts exact matches
+    and trailing ``prefix.*`` wildcards, where ``order.*`` matches
+    ``order.created`` but neither ``order`` nor ``orders.created``.
+    Malformed stored state fails closed for that entry.
+    """
+    if patterns is None:
+        return True
+    if not isinstance(patterns, list):
+        return False
+    for pattern in patterns:
+        if not isinstance(pattern, str):
+            continue
+        if pattern.endswith(".*"):
+            if event_type.startswith(pattern[:-1]):
+                return True
+        elif event_type == pattern:
+            return True
+    return False
+
+
 def sign_payload(
     payload_bytes: bytes, secret: str, timestamp: int | None = None
 ) -> tuple[int, str]:

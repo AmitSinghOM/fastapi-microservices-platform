@@ -352,6 +352,10 @@ class WebhookEndpoint(Base):
     )
     url = Column(String(2_048), nullable=False)
     description = Column(String(500), nullable=True)
+    # Subscribed event types: NULL receives every event (compatibility);
+    # a JSON list of exact types or trailing "prefix.*" wildcards restricts
+    # fan-out at acceptance time. Accepted deliveries are never re-filtered.
+    event_types = Column(JSON, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     secret_version = Column(Integer, default=1, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)

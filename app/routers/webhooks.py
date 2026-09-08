@@ -464,7 +464,8 @@ async def create_endpoint(
     service: WebhookService = Depends(get_webhook_service),
 ):
     endpoint, secret = await service.create_endpoint(
-        user.id, project_id, str(body.url), body.description
+        user.id, project_id, str(body.url), body.description,
+        body.event_types,
     )
     data = EndpointOut.model_validate(endpoint).model_dump()
     return EndpointCreated(**data, signing_secret=secret)

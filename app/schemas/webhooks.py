@@ -121,10 +121,54 @@ class ApiKeyCreated(ApiKeyOut):
     plaintext_key: str
 
 
+def validate_event_type_filters(filters: list[str]) -> list[str]:
+    """Normalize an endpoint's subscription list.
+
+    Each entry is an exact event type or a trailing ``prefix.*`` wildcard
+    that matches ``prefix.<anything>``. ``*`` anywhere else is rejected; an
+    empty list is rejected because omitting the field (null) already means
+    "receive every event".
+    """
+    if not filters:
+        raise ValueError(
+            "event_types must contain at least one entry; "
+            "omit the field to receive every event"
+        )
+    if len(filters) > 100:
+        raise ValueError("event_types cannot exceed 100 entries")
+    normalized: list[str] = []
+    for entry in filters:
+        candidate = entry.strip()
+        if not 1 <= len(candidate) <= 150:
+            raise ValueError(
+                "each event type filter must be 1-150 characters"
+            )
+        if any(ch.isspace() for ch in candidate):
+            raise ValueError(
+                "event type filters cannot contain whitespace"
+            )
+        stem = candidate[:-2] if candidate.endswith(".*") else candidate
+        if "*" in stem or not stem:
+            raise ValueError(
+                "'*' is only allowed as a trailing '.*' wildcard "
+                "with a non-empty prefix"
+            )
+        if candidate not in normalized:
+            normalized.append(candidate)
+    return sorted(normalized)
+
+
 class EndpointCreate(BaseModel):
     model_config = STRICT
     url: HttpUrl
     description: str | None = Field(default=None, max_length=500)
+    event_types: list[str] | None = None
+
+    @model_validator(mode="after")
+    def normalize_event_types(self) -> "EndpointCreate":
+        if self.event_types is not None:
+            self.event_types = validate_event_type_filters(self.event_types)
+        return self
 
 
 class EndpointUpdate(BaseModel):
@@ -132,6 +176,7 @@ class EndpointUpdate(BaseModel):
     url: HttpUrl | None = None
     description: str | None = Field(default=None, max_length=500)
     is_active: bool | None = None
+    event_types: list[str] | None = None
 
     @model_validator(mode="after")
     def require_valid_change(self) -> "EndpointUpdate":
@@ -142,6 +187,12 @@ class EndpointUpdate(BaseModel):
                 self, field_name
             ) is None:
                 raise ValueError(f"{field_name} cannot be null")
+        if (
+            "event_types" in self.model_fields_set
+            and self.event_types is not None
+        ):
+            # Explicit null clears the filter (receive every event).
+            self.event_types = validate_event_type_filters(self.event_types)
         return self
 
 
@@ -150,6 +201,7 @@ class EndpointOut(BaseModel):
     public_id: str
     url: str
     description: str | None
+    event_types: list[str] | None
     is_active: bool
     secret_version: int
     created_at: datetime
