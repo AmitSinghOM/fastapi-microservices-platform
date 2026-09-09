@@ -44,6 +44,9 @@ uvicorn app.main:app --reload
 python -m app.worker
 ```
 
+Then open **<http://localhost:8000/portal>** — the built-in web UI — to do
+the entire setup below without touching `curl`.
+
 Docker Compose starts PostgreSQL 17.2, runs the one-shot migration, waits for a
 healthy API, then starts the worker:
 
@@ -54,6 +57,18 @@ docker compose up --build
 Compose defaults are explicitly development-only, not production secrets.
 Provide stable `SECRET_KEY`, `API_KEY_PEPPER`, `WEBHOOK_SIGNING_KEY`, and database
 credentials in every shared environment.
+
+## Built-in web UI
+
+Every install ships an operator portal at `/portal` — no separate frontend
+to deploy. It covers the full loop: register/log in, create organizations,
+projects, and producer keys, create endpoints (including event-type filters
+and the signature-scheme selector), send test events, inspect deliveries and
+attempts, and replay failures. It is deliberately dependency-free and
+same-origin: plain HTML/JS under a strict CSP, bearer tokens held only in
+page memory, one-time secrets shown once with an explicit clear button.
+Disable it with `PORTAL_ENABLED=false` when operators use only the API and
+[`webhookctl`](docs/phase8-adoption.md).
 
 ## End-to-end API
 
@@ -299,10 +314,8 @@ broker-ingest features elsewhere: instead of consuming Kafka/SQS/RabbitMQ
 topics, enqueue the event in the same database transaction as your business
 write and let the relay deliver it with the same idempotency key — which
 keeps exactly-one-enqueue semantics that broker bridges cannot offer.
-The dependency-free same-origin portal at `/portal` supports initial setup,
-test events, delivery inspection, and replay without persisting bearer tokens
-in browser storage. Disable it with `PORTAL_ENABLED=false` when operators use
-only the API and CLI.
+The [built-in web UI](#built-in-web-ui) covers the same setup, test-event,
+inspection, and replay flow for operators who prefer a browser.
 
 See [the wire protocol](docs/wire-protocol.md),
 [benchmarks and evidence](docs/benchmarks.md),
