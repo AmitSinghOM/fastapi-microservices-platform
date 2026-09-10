@@ -41,8 +41,12 @@ normal reviewed process.
 5. Record and freeze the immutable full commit SHA. Do not change code after
    the freeze; material changes require a new signed candidate, hosted
    validation, and a fresh frozen SHA.
-6. Confirm `sdk/python/pyproject.toml` version `0.1.0` corresponds to the planned
-   signed annotated tag `sdk-v0.1.0`.
+6. Confirm `sdk/python/pyproject.toml` version `0.1.1` corresponds to the planned
+   signed annotated tag `sdk-v0.1.1`. (`0.1.0` was uploaded to TestPyPI on
+   2026-09-10 by a workflow whose post-publish verification could not read
+   its own distribution directory once the publish action added attestation
+   sidecars; that version is burned on TestPyPI, was never promoted, and is
+   superseded by `0.1.1` with the verifier fixed.)
 
 ## 3. Configure remote controls
 
@@ -90,7 +94,7 @@ a new signed candidate.
 From the frozen green commit, create and push a verified signed annotated tag.
 Dispatch `python-sdk-test-release.yml` from that tag and pass the same tag as
 its input (for example, `gh workflow run python-sdk-test-release.yml --ref
-sdk-v0.1.0 -f tag=sdk-v0.1.0`). Verify the workflow used the
+sdk-v0.1.1 -f tag=sdk-v0.1.1`). Verify the workflow used the
 `testpypi` environment, built a clean checkout, passed import/CLI smoke checks,
 and retained the exact wheel, source archive, and `SHA256SUMS` as one GitHub
 artifact before publishing. On retry, it must restore those bytes rather than

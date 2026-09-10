@@ -20,6 +20,8 @@ from urllib.request import urlopen
 PROJECT = "fastapi-microservices-platform-sdk"
 DISTRIBUTION_STEM = "fastapi_microservices_platform_sdk"
 MAX_ARTIFACT_BYTES = 10 * 1024 * 1024
+# Sidecar written next to each distribution by pypa/gh-action-pypi-publish.
+ATTESTATION_SUFFIX = ".publish.attestation"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -79,8 +81,14 @@ def _load_local(
     version: str,
 ) -> tuple[dict[str, str], dict[str, int]]:
     expected = _expected_names(version)
+    # pypa/gh-action-pypi-publish writes `<dist>.publish.attestation`
+    # sidecars into the distribution directory after uploading. They are
+    # not distributions and are not on the registry, so the post-publish
+    # verification must ignore them; anything else unexpected still fails.
     paths = {
-        path.name: path for path in dist_dir.iterdir() if path.is_file()
+        path.name: path
+        for path in dist_dir.iterdir()
+        if path.is_file() and not path.name.endswith(ATTESTATION_SUFFIX)
     }
     if set(paths) != expected:
         raise ReleaseVerificationError(
