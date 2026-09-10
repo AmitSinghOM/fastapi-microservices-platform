@@ -53,6 +53,10 @@ class Settings(BaseSettings):
 
     allowed_hosts: list[str] = ["localhost", "127.0.0.1", "test", "testserver"]
     cors_origins: list[str] = []
+    # Self-hosted deployments can close open registration after initial
+    # setup; the endpoint then refuses with 403 instead of creating
+    # accounts without bound.
+    registration_enabled: bool = True
     rate_limit_requests: int = Field(default=20, ge=1, le=10_000)
     rate_limit_window_seconds: int = Field(default=60, ge=1, le=86_400)
     rate_limit_max_entries: int = Field(default=10_000, ge=100, le=1_000_000)
@@ -188,7 +192,9 @@ class Settings(BaseSettings):
                 setattr(self, field_name, secrets.token_urlsafe(32))
                 print(
                     f"WARNING: {label} is unset; using a process-local "
-                    "development/test key.",
+                    "development/test key. Separate processes (API and "
+                    "worker) will NOT share it, so issued secrets and "
+                    "delivery signatures will not verify across them.",
                     file=sys.stderr,
                 )
             elif len(value) < 32:

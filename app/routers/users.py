@@ -4,15 +4,18 @@ Every route here used to be unauthenticated: GET /users/ returned every user,
 and DELETE /users/{id} removed any account. A require_auth decorator existed but
 was applied nowhere.
 
-Registration stays open because it has to. Everything else requires a token,
-and a user may only read or modify their own record.
+Registration is open by default because a fresh install has no accounts.
+Self-hosted deployments should set REGISTRATION_ENABLED=false after initial
+setup; everything else requires a token, and a user may only read or modify
+their own record.
 """
 
 from fastapi import APIRouter, Depends, status
 
 from app.auth import get_current_active_user
+from app.config import get_settings
 from app.dependencies import get_user_service
-from app.exceptions import NotFoundError
+from app.exceptions import ForbiddenError, NotFoundError
 from app.models import User
 from app.schemas.user import UserCreate, UserResponse, UserUpdate
 from app.services.user_service import UserService
@@ -36,10 +39,13 @@ async def create_user(
     service: UserService = Depends(get_user_service)
 ):
     """Register a new user.
-    
-    Intentionally unauthenticated. Rate limited in middleware, since otherwise
-    this is an unbounded account-creation endpoint.
+
+    Intentionally unauthenticated so a fresh install can bootstrap itself;
+    rate limited in middleware, and refusable outright with
+    REGISTRATION_ENABLED=false once a deployment's operators exist.
     """
+    if not get_settings().registration_enabled:
+        raise ForbiddenError("Registration is disabled on this deployment")
     return await service.create(user)
 
 

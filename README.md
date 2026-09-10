@@ -39,6 +39,9 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+# Generate the three shared secrets. Without values in .env, the API and
+# worker processes each invent their own key and signatures never verify.
+python3 -c "import secrets; print('SECRET_KEY=%s' % secrets.token_urlsafe(32)); print('API_KEY_PEPPER=%s' % secrets.token_urlsafe(32)); print('WEBHOOK_SIGNING_KEY=%s' % secrets.token_urlsafe(32))" >> .env
 uvicorn app.main:app --reload
 # Separate terminal; never embed this in the API process:
 python -m app.worker

@@ -16,7 +16,11 @@ from app.observability import (
     metrics_payload,
 )
 from app.exception_handlers import register_exception_handlers
-from app.middleware import RateLimitMiddleware, RequestContextMiddleware
+from app.middleware import (
+    BodySizeLimitMiddleware,
+    RateLimitMiddleware,
+    RequestContextMiddleware,
+)
 from app.routers import (
     auth_router,
     items_router,
@@ -106,6 +110,9 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(RequestContextMiddleware)
+    # Added last so it runs first: refuse oversized declared bodies before
+    # any handler can parse them.
+    app.add_middleware(BodySizeLimitMiddleware)
 
     app.include_router(auth_router)
     app.include_router(users_router)

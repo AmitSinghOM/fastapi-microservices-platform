@@ -17,6 +17,42 @@ RATE_LIMITED_PATHS = ("/auth/login", "/users/")
 _HITS: dict[str, tuple[float, int]] = {}
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
+# Envelope, headers, and management-body slack on top of the payload cap.
+_BODY_LIMIT_SLACK_BYTES = 65_536
+
+
+class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    """Reject oversized declared bodies before JSON parsing allocates.
+
+    The authoritative payload cap in the service layer runs after FastAPI
+    has parsed the body, so a caller with a valid key could spike memory
+    first. Requests declaring a Content-Length beyond the payload cap plus
+    slack are refused up front with 413. Chunked requests without a
+    declared length are not measured here — the deployment ingress must
+    enforce a body limit, as the operational requirements state.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        declared = request.headers.get("content-length")
+        if declared is not None and declared.isdigit():
+            limit = (
+                get_settings().webhook_payload_max_bytes
+                + _BODY_LIMIT_SLACK_BYTES
+            )
+            if int(declared) > limit:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": {
+                            "code": "PAYLOAD_TOO_LARGE",
+                            "message": (
+                                "Request body exceeds the configured limit"
+                            ),
+                        }
+                    },
+                )
+        return await call_next(request)
+
 
 def reset_rate_limits() -> None:
     """Clear process-local counters, primarily for test isolation."""
