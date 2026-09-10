@@ -10,6 +10,7 @@ import pytest
 from webhook_platform_sdk.receiver import (
     InvalidSignature,
     SignatureExpired,
+    _secret_key_bytes,
     verify_request,
     verify_signature,
     verify_signature_standard,
@@ -131,3 +132,74 @@ def test_standard_only_signature_functions():
             BODY, "ev-1", "not-digits",
             headers["webhook-signature"], STANDARD_SECRET, now=now,
         )
+
+
+def _special_char_digest() -> bytes:
+    """A digest whose base64 differs between the two serializations.
+
+    Finds a digest containing ``+`` or ``/`` in standard base64 (and so
+    ``-`` or ``_`` in base64url). Without this property the two secret
+    forms are byte-identical and the decoder bug this guards against is
+    invisible — which is exactly how it slipped past the original tests.
+    """
+    for i in range(1_000):
+        digest = hashlib.sha256(f"probe-{i}".encode()).digest()
+        encoded = base64.b64encode(digest).decode()
+        if "+" in encoded or "/" in encoded:
+            return digest
+    raise AssertionError("no special-character digest found")
+
+
+def test_either_secret_form_decodes_to_identical_key_bytes():
+    """Regression: b64decode without validate=True silently dropped the
+    urlsafe characters from a legacy-form secret and returned wrong bytes
+    instead of falling through to the urlsafe decoder."""
+    digest = _special_char_digest()
+    legacy = "whsec_" + base64.urlsafe_b64encode(digest).decode().rstrip("=")
+    standard = "whsec_" + base64.b64encode(digest).decode()
+    assert legacy != standard  # the divergent case, by construction
+    assert _secret_key_bytes(standard) == digest
+    assert _secret_key_bytes(legacy) == digest
+
+
+def test_standard_verification_with_special_char_legacy_secret():
+    """End to end: a receiver holding only the legacy-form secret verifies
+    a standard delivery even when the serializations diverge."""
+    digest = _special_char_digest()
+    legacy = "whsec_" + base64.urlsafe_b64encode(digest).decode().rstrip("=")
+    now = int(time.time())
+    signed = f"ev-1.{now}.".encode() + BODY
+    signature = base64.b64encode(
+        hmac.new(digest, signed, hashlib.sha256).digest()
+    ).decode()
+    headers = {
+        "webhook-id": "ev-1",
+        "webhook-event": "order.created",
+        "webhook-timestamp": str(now),
+        "webhook-signature": f"v1,{signature}",
+    }
+    event = verify_request(BODY, headers, legacy, now=now)
+    assert event.event_id == "ev-1"
+
+
+def test_non_ascii_signature_token_fails_closed_not_typeerror():
+    """Regression: a non-ASCII v1 token reached hmac.compare_digest and
+    raised TypeError (a 500 for receivers) instead of InvalidSignature."""
+    now = int(time.time())
+    headers = _standard_headers(now)
+    only_bad = dict(
+        headers, **{"webhook-signature": "v1,签名不对"}
+    )
+    with pytest.raises(InvalidSignature):
+        verify_request(BODY, only_bad, STANDARD_SECRET, now=now)
+    # A non-ASCII token alongside a valid one is ignored, not fatal.
+    mixed = dict(
+        headers,
+        **{
+            "webhook-signature": (
+                "v1,签名不对 " + headers["webhook-signature"]
+            )
+        },
+    )
+    event = verify_request(BODY, mixed, STANDARD_SECRET, now=now)
+    assert event.event_id == "ev-1"

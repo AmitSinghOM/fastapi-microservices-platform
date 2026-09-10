@@ -83,11 +83,16 @@ def _signature_parts(header: str) -> tuple[int, list[str]]:
 
 
 def _standard_signatures(header: str) -> list[str]:
-    """Collect Standard Webhooks ``v1,<base64>`` tokens, ignoring others."""
+    """Collect Standard Webhooks ``v1,<base64>`` tokens, ignoring others.
+
+    Non-ASCII values are dropped here so a malformed or malicious header
+    fails verification (``InvalidSignature``) instead of raising
+    ``TypeError`` from the constant-time comparison.
+    """
     signatures: list[str] = []
     for token in header.split():
         version, separator, value = token.partition(",")
-        if separator and version == "v1" and value:
+        if separator and version == "v1" and value and value.isascii():
             signatures.append(value)
     return signatures
 
@@ -99,14 +104,23 @@ def _secret_key_bytes(secret: str) -> bytes | None:
     ``whsec_`` + unpadded base64url (the legacy form). Returns ``None``
     when the secret does not decode, in which case only legacy
     verification (which keys on the ASCII string itself) is possible.
+
+    ``validate=True`` is load-bearing: without it ``b64decode`` silently
+    drops characters outside its alphabet, so a legacy-form (base64url)
+    secret containing ``-``/``_`` would "decode" through the standard
+    decoder into wrong key bytes instead of falling through to the
+    urlsafe decoder.
     """
     if not secret.startswith("whsec_"):
         return None
     encoded = secret.removeprefix("whsec_")
     padded = encoded + "=" * (-len(encoded) % 4)
-    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
+    # urlsafe_b64decode has no validate parameter and would also silently
+    # accept the wrong alphabet, so translate explicitly and validate both.
+    candidates = (padded, padded.replace("-", "+").replace("_", "/"))
+    for candidate in candidates:
         try:
-            return decoder(padded)
+            return base64.b64decode(candidate, validate=True)
         except (ValueError, binascii.Error):
             continue
     return None
