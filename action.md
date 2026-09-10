@@ -597,6 +597,35 @@ decision. The external release steps (signed candidate, package-index
 publication) remain governed by the release policy and external-gate
 runbook and are not satisfied by this gate.
 
+**Signed candidate and TestPyPI release (2026-09-10):** Owner SSH commit
+signing was configured and proven (`d344ca6` verified after correcting the
+committer email and registering the key as a GitHub signing key rather than
+an authentication key). Two review rounds and one code-reviewer pass landed
+security remediations (`7f7d37a`..`6056974`); a manual CI dispatch then
+surfaced two historical gitleaks false positives (test idempotency-key
+literals in `485c1e0`), pinned by exact fingerprint in `.gitleaksignore`
+(`04b459f`). The first candidate `04b459f` was tagged `sdk-v0.1.0` and
+published to TestPyPI, but the post-publish verifier failed on every attempt
+with `local distribution filenames are unexpected`: the publish action's
+attestation sidecars were written into `dist/`, tripping the strict filename
+check before the registry was ever contacted. Retry attempts rebuilt a
+non-reproducible sdist and were correctly refused by the preflight hash
+check. `0.1.0` is therefore burned on TestPyPI, never promoted, and
+superseded. Fix-forward candidate **`198ba60`** (ignore only the attestation
+suffix; regression tests in `app/tests/test_release_registry.py`; verify
+timeout 120 s→300 s; version `0.1.1`) is signed and Verified, with exact-SHA
+CI run `34463169834`, Container run `34464640584`, and signed tag
+`sdk-v0.1.1`. TestPyPI run `34463988374` passed every step including
+post-publish verification; `fastapi-microservices-platform-sdk 0.1.1` (wheel
+24,390 B, sdist 24,843 B, neither yanked) installed cleanly from TestPyPI
+with `webhookctl --help` and import smoke checks. Retained candidate
+artifact `sdk-v0.1.1-candidate` is the production run's input. Production
+publication is blocked by the 24-hour cooling-off until 2026-09-11 ~15:30
+IST. Post-release workflow hardening logged: the restore step selects the
+first same-name artifact and does not consider prior attempts of the current
+run; the sdist is not byte-reproducible across rebuilds (the wheel is);
+`workflow_dispatch` must be run from the tag, not `main`.
+
 ## Phase 9 — Production deployment guidance
 
 **Purpose:** provide a safe reference deployment for the first real users.
