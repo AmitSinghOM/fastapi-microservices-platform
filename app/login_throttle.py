@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admission import database_now
+from app.admission import _insert_do_nothing, database_now
 from app.config import get_settings
 from app.exceptions import QuotaExceededError
 from app.models import LoginThrottle
@@ -67,40 +67,47 @@ async def record_login_failure(db: AsyncSession, email: str) -> None:
     """Count a failed attempt; lock the scope when the budget is spent.
 
     Commits its own transaction so the throttle state survives even though
-    the surrounding request fails.
+    the surrounding request fails. Row creation uses the same dialect-aware
+    insert-do-nothing idiom as admission state: two concurrent first
+    failures must both count, never surface a primary-key IntegrityError
+    on the login path.
     """
     settings = get_settings()
     scope = login_scope(email)
     now = await database_now(db)
     window = timedelta(seconds=settings.login_throttle_window_seconds)
 
+    await _insert_do_nothing(
+        db,
+        LoginThrottle,
+        {
+            "scope": scope,
+            "failure_count": 0,
+            "window_started_at": now,
+            "locked_until": None,
+            "updated_at": now,
+        },
+        "scope",
+    )
     row = await _locked_row(db, scope, for_update=True)
-    if row is None:
-        db.add(
-            LoginThrottle(
-                scope=scope,
-                failure_count=1,
-                window_started_at=now,
-                locked_until=None,
-                updated_at=now,
-            )
-        )
+    if row is None:  # pragma: no cover - row was just ensured
+        await db.rollback()
+        return
+    expired_lock = (
+        row.locked_until is not None
+        and _aware(row.locked_until) <= now
+    )
+    if _aware(row.window_started_at) + window <= now or expired_lock:
+        row.failure_count = 1
+        row.window_started_at = now
+        row.locked_until = None
     else:
-        expired_lock = (
-            row.locked_until is not None
-            and _aware(row.locked_until) <= now
+        row.failure_count += 1
+    if row.failure_count >= settings.login_throttle_max_failures:
+        row.locked_until = now + timedelta(
+            seconds=settings.login_throttle_lockout_seconds
         )
-        if _aware(row.window_started_at) + window <= now or expired_lock:
-            row.failure_count = 1
-            row.window_started_at = now
-            row.locked_until = None
-        else:
-            row.failure_count += 1
-        if row.failure_count >= settings.login_throttle_max_failures:
-            row.locked_until = now + timedelta(
-                seconds=settings.login_throttle_lockout_seconds
-            )
-        row.updated_at = now
+    row.updated_at = now
     await db.commit()
 
 

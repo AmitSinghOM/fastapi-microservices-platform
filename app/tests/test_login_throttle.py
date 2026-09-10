@@ -117,3 +117,68 @@ async def test_existing_login_flow_unaffected(client: AsyncClient):
     user, token = await register_and_login(client, "normal@example.com")
     assert user["email"] == "normal@example.com"
     assert token
+
+
+@pytest.mark.asyncio
+async def test_failure_recording_survives_concurrent_row_creation(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    sqlite_session_factory,
+):
+    """Regression: a bare INSERT raced a concurrent first failure into a
+    primary-key IntegrityError (a 500 on the login path). The ensure-row
+    upsert must absorb a row that appeared between check and write."""
+    from app.admission import database_now
+    from app.login_throttle import record_login_failure
+    from app.models import LoginThrottle as Throttle
+
+    email = "raced@example.com"
+    scope = login_scope(email)
+
+    # Simulate the concurrent winner: another session creates the row first.
+    async with sqlite_session_factory() as other:
+        now = await database_now(other)
+        other.add(
+            Throttle(
+                scope=scope,
+                failure_count=1,
+                window_started_at=now,
+                locked_until=None,
+                updated_at=now,
+            )
+        )
+        await other.commit()
+
+    # The "loser" records its failure against the pre-existing row:
+    # no IntegrityError, and both failures count.
+    await record_login_failure(db_session, email)
+    row = await db_session.scalar(
+        select(LoginThrottle).where(LoginThrottle.scope == scope)
+    )
+    assert row is not None and row.failure_count == 2
+
+
+@pytest.mark.asyncio
+async def test_double_insert_do_nothing_is_safe(
+    db_session: AsyncSession, sqlite_session_factory
+):
+    """The ensure-row idiom itself must tolerate both racers inserting."""
+    del db_session  # fixture creates the schema
+    from app.admission import _insert_do_nothing, database_now
+    from app.models import LoginThrottle as Throttle
+
+    scope = login_scope("双insert@example.com")
+    async with sqlite_session_factory() as first:
+        async with sqlite_session_factory() as second:
+            now = await database_now(first)
+            values = {
+                "scope": scope,
+                "failure_count": 0,
+                "window_started_at": now,
+                "locked_until": None,
+                "updated_at": now,
+            }
+            await _insert_do_nothing(first, Throttle, values, "scope")
+            await first.commit()
+            await _insert_do_nothing(second, Throttle, dict(values), "scope")
+            await second.commit()  # must not raise
