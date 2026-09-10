@@ -45,7 +45,8 @@ compromised dependencies or workers, and operators making mistakes.
 | Threat | Impact | Current controls | Residual work |
 | --- | --- | --- | --- |
 | Cross-tenant object access | Disclosure or modification | Organization/project role matrix; tenant-hiding `404`; visible denial `403` | Extend the matrix with every future management route |
-| API/JWT theft | Unauthorized ingestion or administration | Digests, peppers, revocation, bounded JWT life, scoped expiring API keys, overlap rotation, immutable audit | Add staged root/pepper rotation tooling |
+| API/JWT theft | Unauthorized ingestion or administration | Digests, peppers, revocation, bounded JWT life, scoped expiring API keys, overlap rotation, immutable audit | Accepted: a stolen bearer token stays valid until `exp` (no revocation list; the minted `jti` is not checked); deactivation is enforced per request. Add staged root/pepper rotation tooling |
+| Targeted login lockout | A chosen account cannot log in during the lockout window | Per-account, database-backed failure budget; the lock rejects before credential evaluation so a locked account is not a password oracle | Accepted risk: an unauthenticated attacker who knows an address can re-lock it indefinitely (availability, not access). Deployments needing stronger login availability should front `/auth/login` with CAPTCHA/WAF controls |
 | Portal XSS or browser credential exposure | Administrative takeover or leaked one-time secrets | Same-origin external assets; strict CSP without inline/third-party code; text-only rendering; no bearer browser storage; password/API-key field clearing | A compromised browser, extension, host, or same-origin service remains trusted; operators must use HTTPS and avoid session recording |
 | Forged webhook | Receiver accepts attacker data | HMAC-SHA256 over timestamp and exact bytes (`legacy`) or over event ID, timestamp, and exact bytes (`standard`, per Standard Webhooks); versioned secrets with bounded verification overlap | Receiver SDK in Phase 8 |
 | Signature scheme downgrade or mismatch | Receiver verification breaks (delivery outage) or loses event-ID binding (`legacy` does not bind `Webhook-Id` into the signature) | Scheme changes require the endpoint-manage role and append an immutable `endpoint.updated` audit event listing `changed_fields`; deliveries snapshot the scheme at acceptance so accepted and replayed work is never re-signed; both schemes remain HMAC-SHA256 over exact bytes; the one-time secret is returned only when switching to `standard` | Receivers that require ID binding should pin the expected scheme and alert on format changes; revisit when 4.0 changes the default for new endpoints (ADR 0002) |
@@ -102,7 +103,15 @@ before broad multi-tenant production claims.
 Production deployments must use HTTPS, stable managed secrets, least-privilege
 database roles, encrypted backups, a trusted ingress, and worker-only egress
 controls that deny private, link-local, metadata, control-plane, database, and
-cluster networks. Operators must alert on queue age, lease expiry, repeated
+cluster networks. The ingress must enforce a request body-size limit (the
+application refuses oversized declared Content-Length values, but chunked
+bodies without a declared length are the ingress's responsibility), and the
+ASGI server behind a proxy must be configured to trust forwarded client
+addresses (for example uvicorn's proxy-headers support); otherwise the
+per-client limiter keys every request to the proxy address and degrades into
+a single global budget for login and registration. Set
+`REGISTRATION_ENABLED=false` once a deployment's operator accounts exist.
+Operators must alert on queue age, lease expiry, repeated
 authorization failures, egress denies, and unusual replay volume.
 
 Incident response should revoke affected credentials, pause compromised
