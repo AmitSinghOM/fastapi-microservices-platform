@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import (
@@ -30,6 +30,7 @@ from app.models import (
     Delivery,
     DeliveryAttempt,
     Event,
+    LoginThrottle,
     Organization,
     OrganizationLifecycleOperation,
     OrganizationPolicy,
@@ -50,6 +51,7 @@ class LifecycleRunResult:
     deliveries_deleted: int = 0
     events_deleted: int = 0
     organizations_deleted: int = 0
+    login_throttles_purged: int = 0
 
     def merged(self, other: "LifecycleRunResult") -> "LifecycleRunResult":
         return LifecycleRunResult(
@@ -66,6 +68,9 @@ class LifecycleRunResult:
             events_deleted=self.events_deleted + other.events_deleted,
             organizations_deleted=(
                 self.organizations_deleted + other.organizations_deleted
+            ),
+            login_throttles_purged=(
+                self.login_throttles_purged + other.login_throttles_purged
             ),
         )
 
@@ -121,7 +126,48 @@ class LifecycleService:
         """Run each maintenance category in an independent transaction."""
         result = await self._purge_responses()
         result = result.merged(await self._purge_event_payloads())
+        result = result.merged(await self._purge_stale_login_throttles())
         return result.merged(await self._cleanup_due_organization())
+
+    async def _purge_stale_login_throttles(self) -> LifecycleRunResult:
+        """Delete throttle rows whose window and lock have both lapsed.
+
+        Failed logins against arbitrary addresses each create a row, so
+        without this sweep an unauthenticated caller grows the table
+        without bound. A row is inert — and safe to delete — once its
+        failure window has fully elapsed and no lock is active; recreating
+        it later is exactly the fresh-window behavior.
+        """
+        async with self.session_factory() as session:
+            async with session.begin():
+                now = await _database_now(session)
+                window_started_before = now - timedelta(
+                    seconds=self.settings.login_throttle_window_seconds
+                )
+                rows = list(
+                    await session.scalars(
+                        _claim_rows(
+                            select(LoginThrottle)
+                            .where(
+                                LoginThrottle.updated_at
+                                <= window_started_before,
+                                or_(
+                                    LoginThrottle.locked_until.is_(None),
+                                    LoginThrottle.locked_until <= now,
+                                ),
+                            )
+                            .order_by(LoginThrottle.updated_at)
+                            .limit(
+                                self.settings.lifecycle_cleanup_batch_size
+                            ),
+                            session,
+                            LoginThrottle,
+                        )
+                    )
+                )
+                for row in rows:
+                    await session.delete(row)
+        return LifecycleRunResult(login_throttles_purged=len(rows))
 
     async def _purge_responses(self) -> LifecycleRunResult:
         async with self.session_factory() as session:
