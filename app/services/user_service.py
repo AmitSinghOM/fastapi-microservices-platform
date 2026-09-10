@@ -14,6 +14,19 @@ from app.services.base import BaseService
 _TIMING_DECOY_HASH = hash_password("timing-decoy-not-a-real-password")
 
 
+def _normalize_email(email: str) -> str:
+    """Lowercase the whole address for storage and lookup.
+
+    Pydantic's EmailStr lowercases only the domain, so without this,
+    ``Amit@example.com`` and ``amit@example.com`` register as two separate
+    accounts and login requires the exact registration casing. RFC 5321
+    technically permits case-sensitive local parts; in practice no mailbox
+    provider distinguishes them, and the login throttle already scopes by
+    the lowercased address.
+    """
+    return email.strip().lower()
+
+
 class UserService(BaseService):
     """Reusable account business logic with explicit transaction handling."""
 
@@ -34,7 +47,9 @@ class UserService(BaseService):
 
     @log_execution
     async def get_by_email(self, email: str) -> User | None:
-        result = await self.db.execute(select(User).where(User.email == email))
+        result = await self.db.execute(
+            select(User).where(User.email == _normalize_email(email))
+        )
         return result.scalar_one_or_none()
 
     @log_execution
@@ -46,11 +61,12 @@ class UserService(BaseService):
     @log_execution
     async def create(self, user_data: UserCreate) -> User:
         """Create once and let the unique constraint settle races."""
-        if await self.get_by_email(user_data.email):
-            raise AlreadyExistsError("User", "email", user_data.email)
+        email = _normalize_email(user_data.email)
+        if await self.get_by_email(email):
+            raise AlreadyExistsError("User", "email", email)
 
         user = User(
-            email=user_data.email,
+            email=email,
             name=user_data.name,
             hashed_password=hash_password(user_data.password),
             created_at=datetime.now(timezone.utc),
@@ -61,9 +77,7 @@ class UserService(BaseService):
             await self.db.commit()
         except IntegrityError as exc:
             await self.db.rollback()
-            raise AlreadyExistsError(
-                "User", "email", user_data.email
-            ) from exc
+            raise AlreadyExistsError("User", "email", email) from exc
         await self.db.refresh(user)
         return user
 
@@ -89,6 +103,8 @@ class UserService(BaseService):
             return None
 
         update_data = user_data.model_dump(exclude_unset=True)
+        if "email" in update_data and update_data["email"] is not None:
+            update_data["email"] = _normalize_email(update_data["email"])
         for field, value in update_data.items():
             setattr(user, field, value)
         try:

@@ -114,3 +114,27 @@ async def test_registration_can_be_disabled(
 
     count = await db_session.scalar(select(func.count(User.id)))
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_email_case_is_normalized_for_identity(client: AsyncClient):
+    """One mailbox, one account: case variants must not fork identities."""
+    password = "correct horse battery staple"
+    created = await client.post(
+        "/users/",
+        json={"email": "Amit@Example.com", "name": "A", "password": password},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["email"] == "amit@example.com"
+
+    duplicate = await client.post(
+        "/users/",
+        json={"email": "AMIT@example.com", "name": "B", "password": password},
+    )
+    assert duplicate.status_code == 409, duplicate.text
+
+    logged_in = await client.post(
+        "/auth/login",
+        data={"username": "aMiT@eXaMpLe.CoM", "password": password},
+    )
+    assert logged_in.status_code == 200, logged_in.text

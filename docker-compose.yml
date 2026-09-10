@@ -1,6 +1,9 @@
 services:
   db:
-    image: postgres:17.2-alpine
+    # Pinned by digest for the same reason as the application Dockerfile:
+    # a replaced upstream tag must not propagate silently.
+    # postgres:17.2-alpine
+    image: postgres:17.2-alpine@sha256:7e5df973a74872482e320dcbdeb055e178d6f42de0558b083892c50cda833c96
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-webhooks}
       POSTGRES_USER: ${POSTGRES_USER:-webhooks}
