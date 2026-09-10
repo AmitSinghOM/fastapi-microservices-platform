@@ -1,0 +1,11 @@
+# Acknowledged gitleaks false positives, pinned by exact fingerprint
+# (commit:file:rule:line) so nothing else is suppressed.
+#
+# Commit 485c1e0 used the test idempotency-key literals
+# "phase7-deletion-pending" and "phase7-deletion-canceled"; the
+# generic-api-key rule matched the word "Key" in the header name. They are
+# plain test strings, not credentials. The working tree was fixed in
+# fb8d8b5, but full-history scans (workflow_dispatch) still see the
+# original commit, and history is immutable by repository policy.
+485c1e0343a6a5f2ffaceb040d7e9b4ca0ac0c62:app/tests/test_phase7_tenant_lifecycle.py:generic-api-key:548
+485c1e0343a6a5f2ffaceb040d7e9b4ca0ac0c62:app/tests/test_phase7_tenant_lifecycle.py:generic-api-key:569
