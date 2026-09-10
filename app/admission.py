@@ -81,12 +81,18 @@ def endpoint_quota_values(
     }
 
 
-async def _insert_do_nothing(
+async def insert_do_nothing(
     session: AsyncSession,
     model: type,
     values: dict[str, object],
     key: str,
 ) -> None:
+    """Insert a row, silently yielding to a concurrent winner.
+
+    Dialect-aware ``ON CONFLICT (key) DO NOTHING`` used wherever two
+    request paths may race to create the same state row (admission
+    state, login throttles). Callers re-read after ensuring.
+    """
     dialect = session.get_bind().dialect.name
     if dialect == "postgresql":
         statement = pg_insert(model).values(**values)
@@ -102,7 +108,7 @@ async def _insert_do_nothing(
 async def ensure_global_state(
     session: AsyncSession, now: datetime
 ) -> None:
-    await _insert_do_nothing(
+    await insert_do_nothing(
         session,
         GlobalControlState,
         {
@@ -121,7 +127,7 @@ async def ensure_tenant_state(
     settings: Settings,
     now: datetime,
 ) -> None:
-    await _insert_do_nothing(
+    await insert_do_nothing(
         session,
         TenantQuotaState,
         tenant_quota_values(organization_id, settings, now),
@@ -135,7 +141,7 @@ async def ensure_endpoint_state(
     settings: Settings,
     now: datetime,
 ) -> None:
-    await _insert_do_nothing(
+    await insert_do_nothing(
         session,
         EndpointQuotaState,
         endpoint_quota_values(endpoint_id, settings, now),

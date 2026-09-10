@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admission import _insert_do_nothing, database_now
+from app.admission import insert_do_nothing, database_now
 from app.config import get_settings
 from app.exceptions import QuotaExceededError
 from app.models import LoginThrottle
@@ -77,7 +77,7 @@ async def record_login_failure(db: AsyncSession, email: str) -> None:
     now = await database_now(db)
     window = timedelta(seconds=settings.login_throttle_window_seconds)
 
-    await _insert_do_nothing(
+    await insert_do_nothing(
         db,
         LoginThrottle,
         {

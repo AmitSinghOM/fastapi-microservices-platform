@@ -159,12 +159,12 @@ async def test_failure_recording_survives_concurrent_row_creation(
 
 
 @pytest.mark.asyncio
-async def test_double_insert_do_nothing_is_safe(
+async def test_doubleinsert_do_nothing_is_safe(
     db_session: AsyncSession, sqlite_session_factory
 ):
     """The ensure-row idiom itself must tolerate both racers inserting."""
     del db_session  # fixture creates the schema
-    from app.admission import _insert_do_nothing, database_now
+    from app.admission import insert_do_nothing, database_now
     from app.models import LoginThrottle as Throttle
 
     scope = login_scope("双insert@example.com")
@@ -178,7 +178,7 @@ async def test_double_insert_do_nothing_is_safe(
                 "locked_until": None,
                 "updated_at": now,
             }
-            await _insert_do_nothing(first, Throttle, values, "scope")
+            await insert_do_nothing(first, Throttle, values, "scope")
             await first.commit()
-            await _insert_do_nothing(second, Throttle, dict(values), "scope")
+            await insert_do_nothing(second, Throttle, dict(values), "scope")
             await second.commit()  # must not raise
