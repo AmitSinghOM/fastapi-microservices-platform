@@ -683,6 +683,18 @@ same tag restores the identical bytes from the first run, skips the build,
 and passes end to end without any manual artifact deletion. Record run IDs
 here.
 
+Evidence so far (2026-09-12): candidate `0127481` (signed, Verified; also
+carries the repo-wide `ruff format` and its enforcement in `make lint` and
+CI). (1) ✅ CI run `34643034473` green including `sdk-reproducible-build`;
+Container run `34643034430` green. (2) ✅ Signed tag `sdk-v0.1.2`; TestPyPI
+run `34644701132` (#8) green on the first attempt — restore found no
+candidate, built and normalized, published, verified. TestPyPI now shows
+`license_expression: Apache-2.0` with no embedded license text; wheel
+20,631 B (`745bb7c3…`), sdist 23,030 B (`168d838e…`). A clean local build of
+the tag on macOS (uid 503) with `normalize_sdist.py` reproduced **both**
+hashes exactly against the Ubuntu-runner-published files — the first time
+the source archive has been independently reproducible. (3) ⏳ pending.
+
 **Production release to PyPI (2026-09-11):** after the 24-hour cooling-off
 (TestPyPI upload 10:03 UTC 2026-09-10; production dispatch 19:03 UTC
 2026-09-11, 33 h later) the owner dispatched `python-sdk-release` from tag
