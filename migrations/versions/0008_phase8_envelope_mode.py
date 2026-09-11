@@ -26,9 +26,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    events = sa.table(
-        "events", sa.column("envelope_mode", sa.String(16))
-    )
+    events = sa.table("events", sa.column("envelope_mode", sa.String(16)))
     cloud_event_count = op.get_bind().scalar(
         sa.select(sa.func.count())
         .select_from(events)
@@ -39,7 +37,5 @@ def downgrade() -> None:
             "Cannot downgrade Phase 8 while CloudEvents envelopes exist"
         )
     with op.batch_alter_table("events") as batch_op:
-        batch_op.drop_constraint(
-            "ck_events_envelope_mode", type_="check"
-        )
+        batch_op.drop_constraint("ck_events_envelope_mode", type_="check")
         batch_op.drop_column("envelope_mode")

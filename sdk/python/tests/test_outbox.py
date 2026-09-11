@@ -47,9 +47,7 @@ def test_outbox_uses_caller_transaction_and_stable_retry_key() -> None:
         row = session.execute(select(outbox_events)).mappings().one()
         assert row["sent_at"] is not None
         assert row["attempt_count"] == 2
-        count = session.scalar(
-            select(func.count()).select_from(outbox_events)
-        )
+        count = session.scalar(select(func.count()).select_from(outbox_events))
         assert count == 1
 
 

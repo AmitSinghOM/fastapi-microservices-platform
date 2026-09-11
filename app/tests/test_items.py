@@ -12,8 +12,8 @@ async def test_create_item(client: AsyncClient, auth):
         json={
             "title": "Test Item",
             "description": "A test item",
-            "price": 29.99
-        }
+            "price": 29.99,
+        },
     )
     assert response.status_code == 201
     data = response.json()
@@ -27,27 +27,31 @@ async def test_create_item_negative_price(client: AsyncClient, auth):
     """Test rejection of negative price."""
     _, headers = auth
     response = await client.post(
-        "/items/",
-        headers=headers,
-        json={"title": "Bad Item", "price": -10.00}
+        "/items/", headers=headers, json={"title": "Bad Item", "price": -10.00}
     )
     assert response.status_code == 400
     assert "negative" in response.text.lower()
 
 
 @pytest.mark.asyncio
-async def test_get_items_returns_only_your_own(client: AsyncClient, auth, other_auth):
+async def test_get_items_returns_only_your_own(
+    client: AsyncClient, auth, other_auth
+):
     """GET /items/ used to return every item belonging to every user."""
     _, headers = auth
     other_user, other_headers = other_auth
 
     for i in range(3):
         await client.post(
-            "/items/", headers=headers,
-            json={"title": f"Mine {i}", "price": 10.00 * (i + 1)})
+            "/items/",
+            headers=headers,
+            json={"title": f"Mine {i}", "price": 10.00 * (i + 1)},
+        )
     await client.post(
-        "/items/", headers=other_headers,
-        json={"title": "Theirs", "price": 99.00})
+        "/items/",
+        headers=other_headers,
+        json={"title": "Theirs", "price": 99.00},
+    )
 
     response = await client.get("/items/", headers=headers)
 
@@ -63,13 +67,17 @@ async def test_update_item(client: AsyncClient, auth):
     """Test item update."""
     _, headers = auth
     created = await client.post(
-        "/items/", headers=headers,
-        json={"title": "Original Title", "price": 20.00})
+        "/items/",
+        headers=headers,
+        json={"title": "Original Title", "price": 20.00},
+    )
     item_id = created.json()["id"]
 
     response = await client.patch(
-        f"/items/{item_id}", headers=headers,
-        json={"title": "Updated Title", "price": 25.00})
+        f"/items/{item_id}",
+        headers=headers,
+        json={"title": "Updated Title", "price": 25.00},
+    )
 
     assert response.status_code == 200
     assert response.json()["title"] == "Updated Title"
@@ -81,8 +89,8 @@ async def test_delete_item(client: AsyncClient, auth):
     """Test item deletion."""
     _, headers = auth
     created = await client.post(
-        "/items/", headers=headers,
-        json={"title": "Delete Me", "price": 5.00})
+        "/items/", headers=headers, json={"title": "Delete Me", "price": 5.00}
+    )
     item_id = created.json()["id"]
 
     response = await client.delete(f"/items/{item_id}", headers=headers)
@@ -100,34 +108,45 @@ async def test_delete_item(client: AsyncClient, auth):
 # parameter skipped the check, so any caller could modify any item.
 # =============================================================================
 
+
 @pytest.mark.asyncio
-async def test_cannot_delete_another_users_item(client: AsyncClient, auth, other_auth):
+async def test_cannot_delete_another_users_item(
+    client: AsyncClient, auth, other_auth
+):
     _, headers = auth
     _, intruder_headers = other_auth
     created = await client.post(
-        "/items/", headers=headers,
-        json={"title": "Not Yours", "price": 50.00})
+        "/items/", headers=headers, json={"title": "Not Yours", "price": 50.00}
+    )
     item_id = created.json()["id"]
 
-    response = await client.delete(f"/items/{item_id}", headers=intruder_headers)
+    response = await client.delete(
+        f"/items/{item_id}", headers=intruder_headers
+    )
 
     assert response.status_code == 404
     # Still there for the real owner.
-    assert (await client.get(f"/items/{item_id}", headers=headers)).status_code == 200
+    assert (
+        await client.get(f"/items/{item_id}", headers=headers)
+    ).status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_cannot_update_another_users_item(client: AsyncClient, auth, other_auth):
+async def test_cannot_update_another_users_item(
+    client: AsyncClient, auth, other_auth
+):
     _, headers = auth
     _, intruder_headers = other_auth
     created = await client.post(
-        "/items/", headers=headers,
-        json={"title": "Original", "price": 50.00})
+        "/items/", headers=headers, json={"title": "Original", "price": 50.00}
+    )
     item_id = created.json()["id"]
 
     response = await client.patch(
-        f"/items/{item_id}", headers=intruder_headers,
-        json={"title": "Hijacked"})
+        f"/items/{item_id}",
+        headers=intruder_headers,
+        json={"title": "Hijacked"},
+    )
 
     assert response.status_code == 404
     unchanged = await client.get(f"/items/{item_id}", headers=headers)
@@ -135,12 +154,14 @@ async def test_cannot_update_another_users_item(client: AsyncClient, auth, other
 
 
 @pytest.mark.asyncio
-async def test_cannot_read_another_users_item(client: AsyncClient, auth, other_auth):
+async def test_cannot_read_another_users_item(
+    client: AsyncClient, auth, other_auth
+):
     _, headers = auth
     _, intruder_headers = other_auth
     created = await client.post(
-        "/items/", headers=headers,
-        json={"title": "Private", "price": 50.00})
+        "/items/", headers=headers, json={"title": "Private", "price": 50.00}
+    )
     item_id = created.json()["id"]
 
     response = await client.get(f"/items/{item_id}", headers=intruder_headers)
@@ -149,7 +170,9 @@ async def test_cannot_read_another_users_item(client: AsyncClient, auth, other_a
 
 
 @pytest.mark.asyncio
-async def test_owner_id_parameter_is_ignored(client: AsyncClient, auth, other_auth):
+async def test_owner_id_parameter_is_ignored(
+    client: AsyncClient, auth, other_auth
+):
     """Supplying owner_id must not let a caller create items as someone else."""
     user, headers = auth
     other_user, _ = other_auth
@@ -166,18 +189,25 @@ async def test_owner_id_parameter_is_ignored(client: AsyncClient, auth, other_au
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("method,path", [
-    ("post", "/items/"),
-    ("get", "/items/"),
-    ("get", "/items/1"),
-    ("patch", "/items/1"),
-    ("delete", "/items/1"),
-])
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("post", "/items/"),
+        ("get", "/items/"),
+        ("get", "/items/1"),
+        ("patch", "/items/1"),
+        ("delete", "/items/1"),
+    ],
+)
 async def test_all_item_endpoints_require_authentication(
     client: AsyncClient, method, path
 ):
     request = getattr(client, method)
-    kwargs = {"json": {"title": "x", "price": 1.0}} if method in ("post", "patch") else {}
+    kwargs = (
+        {"json": {"title": "x", "price": 1.0}}
+        if method in ("post", "patch")
+        else {}
+    )
 
     response = await request(path, **kwargs)
 

@@ -1563,7 +1563,9 @@ class WebhookService:
             raise ValidationError("Payload must be valid finite JSON") from exc
         if len(payload_bytes) > self.settings.webhook_payload_max_bytes:
             raise ValidationError("Webhook payload exceeds configured limit")
-        fingerprint_material = event_type.encode("utf-8") + b"\0" + payload_bytes
+        fingerprint_material = (
+            event_type.encode("utf-8") + b"\0" + payload_bytes
+        )
         if envelope_mode != "native":
             fingerprint_material = (
                 envelope_mode.encode("ascii") + b"\0" + fingerprint_material

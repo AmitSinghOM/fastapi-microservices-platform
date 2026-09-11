@@ -82,9 +82,7 @@ def upgrade() -> None:
         ondelete="SET NULL",
     )
 
-    op.drop_constraint(
-        "ck_deliveries_status", "deliveries", type_="check"
-    )
+    op.drop_constraint("ck_deliveries_status", "deliveries", type_="check")
     op.create_check_constraint(
         "ck_deliveries_status",
         "deliveries",
@@ -94,15 +92,11 @@ def upgrade() -> None:
     op.add_column(
         "deliveries", sa.Column("dead_at", sa.DateTime(timezone=True))
     )
-    op.add_column(
-        "deliveries", sa.Column("dead_reason", sa.String(64))
-    )
+    op.add_column("deliveries", sa.Column("dead_reason", sa.String(64)))
     op.add_column(
         "deliveries", sa.Column("canceled_at", sa.DateTime(timezone=True))
     )
-    op.add_column(
-        "deliveries", sa.Column("canceled_reason", sa.String(200))
-    )
+    op.add_column("deliveries", sa.Column("canceled_reason", sa.String(200)))
     deliveries = sa.table(
         "deliveries",
         sa.column("status"),
@@ -125,7 +119,6 @@ def upgrade() -> None:
         "deliveries",
         ["endpoint_id", "status", "dead_at", "id"],
     )
-
 
     op.create_table(
         "replay_operations",
@@ -181,9 +174,7 @@ def downgrade() -> None:
     op.drop_column("deliveries", "canceled_at")
     op.drop_column("deliveries", "dead_reason")
     op.drop_column("deliveries", "dead_at")
-    op.drop_constraint(
-        "ck_deliveries_status", "deliveries", type_="check"
-    )
+    op.drop_constraint("ck_deliveries_status", "deliveries", type_="check")
     op.create_check_constraint(
         "ck_deliveries_status",
         "deliveries",
@@ -208,9 +199,7 @@ def downgrade() -> None:
     )
     op.drop_column("endpoint_quota_state", "pause_reason")
     op.drop_column("endpoint_quota_state", "paused_at")
-    op.drop_column(
-        "endpoint_quota_state", "half_open_probe_delivery_id"
-    )
+    op.drop_column("endpoint_quota_state", "half_open_probe_delivery_id")
     op.drop_column("endpoint_quota_state", "circuit_open_until")
     op.drop_column("endpoint_quota_state", "consecutive_failures")
     op.drop_column("endpoint_quota_state", "circuit_state")

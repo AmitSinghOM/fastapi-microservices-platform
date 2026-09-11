@@ -118,8 +118,13 @@ class Gate:
 
         return _Step()
 
-    def run(self, *command: str, env: dict | None = None,
-            cwd: Path | None = None, stdin_text: str | None = None) -> str:
+    def run(
+        self,
+        *command: str,
+        env: dict | None = None,
+        cwd: Path | None = None,
+        stdin_text: str | None = None,
+    ) -> str:
         result = subprocess.run(
             command,
             cwd=cwd or self.clone,
@@ -142,8 +147,9 @@ class Gate:
         )
         return json.loads(output)
 
-    def spawn(self, *command: str, env: dict | None = None,
-              cwd: Path | None = None) -> subprocess.Popen:
+    def spawn(
+        self, *command: str, env: dict | None = None, cwd: Path | None = None
+    ) -> subprocess.Popen:
         process = subprocess.Popen(
             command,
             cwd=cwd or self.clone,
@@ -183,36 +189,51 @@ class Gate:
         with self.step("clone repository into clean workspace"):
             subprocess.run(
                 ["git", "clone", "--quiet", str(self.repo), str(self.clone)],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
 
         with self.step("create clean virtual environment"):
             subprocess.run(
                 [sys.executable, "-m", "venv", str(self.venv)],
-                check=True, capture_output=True,
+                check=True,
+                capture_output=True,
             )
 
         with self.step("pip install platform requirements"):
             self.run(
-                str(self.bin / "pip"), "install", "--quiet",
-                "-r", "requirements.txt",
+                str(self.bin / "pip"),
+                "install",
+                "--quiet",
+                "-r",
+                "requirements.txt",
             )
 
         with self.step("pip install SDK and receiver example"):
-            self.run(str(self.bin / "pip"), "install", "--quiet",
-                     "./sdk/python")
+            self.run(
+                str(self.bin / "pip"), "install", "--quiet", "./sdk/python"
+            )
             # The receiver README says "from this directory": its
             # requirements file uses a relative editable SDK path.
             self.run(
-                str(self.bin / "pip"), "install", "--quiet",
-                "-r", "requirements.txt",
+                str(self.bin / "pip"),
+                "install",
+                "--quiet",
+                "-r",
+                "requirements.txt",
                 cwd=self.clone / "examples" / "receiver",
             )
 
         with self.step("start API and wait for readiness"):
             self.spawn(
-                str(self.bin / "python"), "-m", "uvicorn", "app.main:app",
-                "--port", str(self.api_port), "--host", "127.0.0.1",
+                str(self.bin / "python"),
+                "-m",
+                "uvicorn",
+                "app.main:app",
+                "--port",
+                str(self.api_port),
+                "--host",
+                "127.0.0.1",
             )
             self.wait_http(
                 f"http://127.0.0.1:{self.api_port}/readyz", timeout=90
@@ -220,12 +241,19 @@ class Gate:
 
         with self.step("register and log in with webhookctl"):
             self.ctl(
-                "auth", "register",
-                "--email", "gate@example.com", "--name", "Gate Runner",
+                "auth",
+                "register",
+                "--email",
+                "gate@example.com",
+                "--name",
+                "Gate Runner",
                 stdin_text=f"{PASSWORD}\n{PASSWORD}\n",
             )
             self.ctl(
-                "auth", "login", "--email", "gate@example.com",
+                "auth",
+                "login",
+                "--email",
+                "gate@example.com",
                 stdin_text=f"{PASSWORD}\n",
             )
 
@@ -234,30 +262,47 @@ class Gate:
                 "organizations", "create", "--name", "Gate Organization"
             )
             project = self.ctl(
-                "projects", "create",
-                "--organization", organization["public_id"],
-                "--name", "Gate Project",
+                "projects",
+                "create",
+                "--organization",
+                organization["public_id"],
+                "--name",
+                "Gate Project",
             )
             self.project_id = project["public_id"]
             key = self.ctl(
-                "api-keys", "create", "--project", self.project_id,
-                "--name", "gate-producer",
+                "api-keys",
+                "create",
+                "--project",
+                self.project_id,
+                "--name",
+                "gate-producer",
             )
             self.api_key = key["plaintext_key"]
 
         with self.step("create endpoint targeting the local receiver"):
             endpoint = self.ctl(
-                "endpoints", "create", "--project", self.project_id,
+                "endpoints",
+                "create",
+                "--project",
+                self.project_id,
                 "--url",
                 f"http://127.0.0.1:{self.receiver_port}/webhooks",
-                "--signature-scheme", "standard",
+                "--signature-scheme",
+                "standard",
             )
             self.signing_secret = endpoint["signing_secret"]
 
         with self.step("start example receiver with the one-time secret"):
             self.spawn(
-                str(self.bin / "python"), "-m", "uvicorn", "app:app",
-                "--port", str(self.receiver_port), "--host", "127.0.0.1",
+                str(self.bin / "python"),
+                "-m",
+                "uvicorn",
+                "app:app",
+                "--port",
+                str(self.receiver_port),
+                "--host",
+                "127.0.0.1",
                 cwd=self.clone / "examples" / "receiver",
                 env={
                     **self.base_env,
@@ -273,10 +318,15 @@ class Gate:
             payload = self.workspace / "payload.json"
             payload.write_text('{"order_id": "gate-1", "total": 42}')
             self.run(
-                str(self.bin / "webhookctl"), "events", "send",
-                "--type", EVENT_TYPE,
-                "--idempotency-key", IDEMPOTENCY_KEY,
-                "--payload-file", str(payload),
+                str(self.bin / "webhookctl"),
+                "events",
+                "send",
+                "--type",
+                EVENT_TYPE,
+                "--idempotency-key",
+                IDEMPOTENCY_KEY,
+                "--payload-file",
+                str(payload),
                 env={
                     **self.base_env,
                     "WEBHOOK_PLATFORM_API_KEY": self.api_key,
@@ -284,9 +334,7 @@ class Gate:
             )
 
         with self.step("run worker until the delivery succeeds"):
-            worker = self.spawn(
-                str(self.bin / "python"), "-m", "app.worker"
-            )
+            worker = self.spawn(str(self.bin / "python"), "-m", "app.worker")
             deadline = time.monotonic() + 120
             delivery = None
             while time.monotonic() < deadline:
@@ -318,14 +366,22 @@ class Gate:
 
         with self.step("inspect the delivery and its attempts via the CLI"):
             detail = self.ctl(
-                "deliveries", "get", "--project", self.project_id,
-                "--delivery", self.delivery_id,
+                "deliveries",
+                "get",
+                "--project",
+                self.project_id,
+                "--delivery",
+                self.delivery_id,
             )
             if detail.get("status") != "succeeded":
                 raise GateFailure("delivery detail is not 'succeeded'")
             attempts = self.ctl(
-                "deliveries", "attempts", "--project", self.project_id,
-                "--delivery", self.delivery_id,
+                "deliveries",
+                "attempts",
+                "--project",
+                self.project_id,
+                "--delivery",
+                self.delivery_id,
             )
             if not attempts:
                 raise GateFailure("delivery has no recorded attempts")
@@ -351,8 +407,13 @@ def main(argv: list[str] | None = None) -> int:
                 f"total {gate.elapsed():.0f}s exceeded the "
                 f"{args.budget_seconds}s budget"
             )
-    except (GateFailure, subprocess.CalledProcessError,
-            subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as exc:
+    except (
+        GateFailure,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        json.JSONDecodeError,
+        OSError,
+    ) as exc:
         error = str(exc)[:300]
     finally:
         gate.cleanup()

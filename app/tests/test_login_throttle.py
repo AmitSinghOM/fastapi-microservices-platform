@@ -48,9 +48,7 @@ async def test_account_locks_after_failure_budget(
     assert locked.json()["error"]["code"] == "QUOTA_EXCEEDED"
 
     row = await db_session.scalar(
-        select(LoginThrottle).where(
-            LoginThrottle.scope == login_scope(email)
-        )
+        select(LoginThrottle).where(LoginThrottle.scope == login_scope(email))
     )
     assert row is not None and row.locked_until is not None
 
@@ -73,9 +71,7 @@ async def test_success_clears_throttle_state(
     assert ok.status_code == 200, ok.text
 
     row = await db_session.scalar(
-        select(LoginThrottle).where(
-            LoginThrottle.scope == login_scope(email)
-        )
+        select(LoginThrottle).where(LoginThrottle.scope == login_scope(email))
     )
     assert row is None
 

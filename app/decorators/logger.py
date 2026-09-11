@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 def log_execution(func: Callable) -> Callable:
     """Decorator to log function execution time and details."""
-    
+
     @functools.wraps(func)
     async def async_wrapper(*args, **kwargs):
         start = time.time()
@@ -23,7 +23,7 @@ def log_execution(func: Callable) -> Callable:
             elapsed = time.time() - start
             logger.error(f"{func.__name__} failed after {elapsed:.3f}s: {e}")
             raise
-    
+
     @functools.wraps(func)
     def sync_wrapper(*args, **kwargs):
         start = time.time()
@@ -37,8 +37,9 @@ def log_execution(func: Callable) -> Callable:
             elapsed = time.time() - start
             logger.error(f"{func.__name__} failed after {elapsed:.3f}s: {e}")
             raise
-    
+
     import asyncio
+
     if asyncio.iscoroutinefunction(func):
         return async_wrapper
     return sync_wrapper

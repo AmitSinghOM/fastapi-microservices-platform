@@ -152,9 +152,7 @@ async def seed_control_plane(
                     **endpoint_quota_values(burst_endpoint.id, settings, now)
                 ),
                 EndpointQuotaState(
-                    **endpoint_quota_values(
-                        healthy_endpoint.id, settings, now
-                    )
+                    **endpoint_quota_values(healthy_endpoint.id, settings, now)
                 ),
             )
         )
@@ -272,9 +270,7 @@ async def wait_for_delivery(
             )
         if value is not None:
             return (
-                value
-                if value.tzinfo
-                else value.replace(tzinfo=timezone.utc)
+                value if value.tzinfo else value.replace(tzinfo=timezone.utc)
             )
         await asyncio.sleep(0.02)
 
@@ -425,9 +421,12 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
             nat_connection_budget=10,
             observability_enabled=False,
         )
-        burst_project, burst_endpoint, healthy_project, healthy_endpoint = (
-            await seed_control_plane(factory, settings)
-        )
+        (
+            burst_project,
+            burst_endpoint,
+            healthy_project,
+            healthy_endpoint,
+        ) = await seed_control_plane(factory, settings)
         baseline_id = str(uuid4())
         baseline_due = datetime.now(timezone.utc)
         await add_healthy_delivery(
@@ -489,9 +488,7 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
         comparison_latency = (
             comparison_finished - comparison_due
         ).total_seconds()
-        arrival_end = burst_started + timedelta(
-            seconds=args.arrival_seconds
-        )
+        arrival_end = burst_started + timedelta(seconds=args.arrival_seconds)
         drain_seconds = max(0.0, (completed_at - arrival_end).total_seconds())
         invariants = await verify(factory, expected)
         healthy_limit = max(0.25, baseline_latency * 2)

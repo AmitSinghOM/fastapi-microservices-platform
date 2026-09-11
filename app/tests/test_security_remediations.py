@@ -62,9 +62,7 @@ async def test_lifecycle_purges_stale_login_throttles(
     ).run_once()
 
     assert result.login_throttles_purged == 2
-    remaining = set(
-        await db_session.scalars(select(LoginThrottle.scope))
-    )
+    remaining = set(await db_session.scalars(select(LoginThrottle.scope)))
     assert remaining == {
         "email:fresh@example.com",
         "email:locked@example.com",
@@ -97,9 +95,7 @@ async def test_registration_can_be_disabled(
     settings = worker_settings().model_copy(
         update={"registration_enabled": False}
     )
-    monkeypatch.setattr(
-        users_router_module, "get_settings", lambda: settings
-    )
+    monkeypatch.setattr(users_router_module, "get_settings", lambda: settings)
     refused = await client.post(
         "/users/",
         json={

@@ -94,8 +94,7 @@ async def record_login_failure(db: AsyncSession, email: str) -> None:
         await db.rollback()
         return
     expired_lock = (
-        row.locked_until is not None
-        and _aware(row.locked_until) <= now
+        row.locked_until is not None and _aware(row.locked_until) <= now
     )
     if _aware(row.window_started_at) + window <= now or expired_lock:
         row.failure_count = 1

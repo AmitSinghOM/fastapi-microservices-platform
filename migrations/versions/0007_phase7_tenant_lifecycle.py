@@ -47,8 +47,7 @@ def _drop_audit_immutability_trigger() -> None:
         "ON administrative_audit_events"
     )
     op.execute(
-        "DROP FUNCTION IF EXISTS "
-        "reject_administrative_audit_event_mutation()"
+        "DROP FUNCTION IF EXISTS reject_administrative_audit_event_mutation()"
     )
 
 
@@ -166,9 +165,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["project_id"], ["projects.id"], ondelete="CASCADE"
         ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.UniqueConstraint(
             "project_id", "user_id", name="uq_project_members_project_user"
         ),
@@ -191,9 +188,7 @@ def upgrade() -> None:
         batch_op.add_column(
             sa.Column("expires_at", sa.DateTime(timezone=True))
         )
-        batch_op.add_column(
-            sa.Column("rotation_family_id", sa.String(36))
-        )
+        batch_op.add_column(sa.Column("rotation_family_id", sa.String(36)))
         batch_op.add_column(sa.Column("rotated_from_id", sa.Integer()))
         batch_op.create_foreign_key(
             "fk_api_keys_rotated_from",
@@ -437,9 +432,7 @@ def downgrade() -> None:
     op.drop_table("project_members")
     op.drop_table("organization_policies")
 
-    members = sa.table(
-        "organization_members", sa.column("role", sa.String())
-    )
+    members = sa.table("organization_members", sa.column("role", sa.String()))
     connection.execute(
         members.update().where(members.c.role == "admin").values(role="member")
     )

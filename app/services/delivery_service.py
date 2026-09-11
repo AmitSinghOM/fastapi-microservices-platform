@@ -341,9 +341,7 @@ class DeliveryService:
                 retryable = is_retryable_status(status_code)
                 if status_code is not None and not 200 <= status_code < 300:
                     error = (
-                        "retryable_http_status"
-                        if retryable
-                        else "http_status"
+                        "retryable_http_status" if retryable else "http_status"
                     )
             except TimeoutError:
                 retryable = True
@@ -364,9 +362,7 @@ class DeliveryService:
                 error = type(exc).__name__
 
         return AttemptResult(
-            succeeded=(
-                status_code is not None and 200 <= status_code < 300
-            ),
+            succeeded=(status_code is not None and 200 <= status_code < 300),
             retryable=retryable,
             status_code=status_code,
             error=error,
@@ -380,9 +376,7 @@ class DeliveryService:
             span.set_attribute("webhook.finalized", finalized)
             return finalized
 
-    async def _deliver_with_heartbeat(
-        self, claim: ClaimedDelivery
-    ) -> bool:
+    async def _deliver_with_heartbeat(self, claim: ClaimedDelivery) -> bool:
         started = utcnow()
         heartbeat_stop = asyncio.Event()
         attempt_task = asyncio.create_task(self._perform_attempt(claim))
@@ -452,8 +446,7 @@ class DeliveryService:
                 endpoint_state = await session.scalar(
                     select(EndpointQuotaState)
                     .where(
-                        EndpointQuotaState.endpoint_id
-                        == delivery.endpoint_id
+                        EndpointQuotaState.endpoint_id == delivery.endpoint_id
                     )
                     .with_for_update()
                 )

@@ -16,14 +16,14 @@ async def get_service_factory(
 
 
 async def get_user_service(
-    factory: ServiceFactory = Depends(get_service_factory)
+    factory: ServiceFactory = Depends(get_service_factory),
 ) -> UserService:
     """Dependency to get user service via factory."""
     return factory.get_user_service()
 
 
 async def get_item_service(
-    factory: ServiceFactory = Depends(get_service_factory)
+    factory: ServiceFactory = Depends(get_service_factory),
 ) -> ItemService:
     """Dependency to get item service via factory."""
     return factory.get_item_service()

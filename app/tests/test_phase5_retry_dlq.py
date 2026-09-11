@@ -130,9 +130,13 @@ async def test_retry_after_and_circuit_half_open_recovery(
         async with sqlite_session_factory() as session:
             delivery = await session.get(Delivery, first.id)
             assert delivery is not None
-            assert 29 <= (
-                delivery.next_attempt_at - delivery.updated_at
-            ).total_seconds() <= 31
+            assert (
+                29
+                <= (
+                    delivery.next_attempt_at - delivery.updated_at
+                ).total_seconds()
+                <= 31
+            )
             delivery.next_attempt_at = datetime.now(timezone.utc)
             await session.commit()
 
@@ -200,9 +204,7 @@ async def test_dead_operations_replay_pause_cancel_export_and_purge(
     _, bearer = auth
     other_user, other_bearer = other_auth
     project_id, api_key = await api_project_key(client, bearer)
-    endpoint = await create_api_endpoint(
-        client, bearer, project_id, "phase5"
-    )
+    endpoint = await create_api_endpoint(client, bearer, project_id, "phase5")
     assert endpoint.status_code == 201
     endpoint_id = endpoint.json()["public_id"]
     accepted = await client.post(
@@ -271,9 +273,7 @@ async def test_dead_operations_replay_pause_cancel_export_and_purge(
     assert replay.json()["public_id"] == repeated.json()["public_id"]
     assert replay.json()["mode"] == "single"
     assert replay.json()["created_count"] == 1
-    assert await db_session.scalar(
-        select(func.count(ReplayOperation.id))
-    ) == 1
+    assert await db_session.scalar(select(func.count(ReplayOperation.id))) == 1
     assert await db_session.scalar(select(func.count(Delivery.id))) == 2
 
     paused = await client.post(

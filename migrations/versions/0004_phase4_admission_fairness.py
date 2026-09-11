@@ -10,9 +10,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "deliveries", sa.Column("organization_id", sa.Integer())
-    )
+    op.add_column("deliveries", sa.Column("organization_id", sa.Integer()))
     connection = op.get_bind()
     deliveries = sa.table(
         "deliveries",
@@ -39,9 +37,7 @@ def upgrade() -> None:
         .scalar_subquery()
     )
     connection.execute(
-        deliveries.update().values(
-            organization_id=organization_for_event
-        )
+        deliveries.update().values(organization_id=organization_for_event)
     )
     op.alter_column("deliveries", "organization_id", nullable=False)
     op.create_foreign_key(
@@ -110,13 +106,15 @@ def upgrade() -> None:
 
     now = sa.func.now()
     connection.execute(
-        sa.insert(sa.table(
-            "global_control_state",
-            sa.column("id"),
-            sa.column("tenant_cursor_organization_id"),
-            sa.column("created_at"),
-            sa.column("updated_at"),
-        )).values(
+        sa.insert(
+            sa.table(
+                "global_control_state",
+                sa.column("id"),
+                sa.column("tenant_cursor_organization_id"),
+                sa.column("created_at"),
+                sa.column("updated_at"),
+            )
+        ).values(
             id=1,
             tenant_cursor_organization_id=None,
             created_at=now,
@@ -152,9 +150,7 @@ def upgrade() -> None:
             ),
         )
     )
-    endpoints = sa.table(
-        "webhook_endpoints", sa.column("id", sa.Integer())
-    )
+    endpoints = sa.table("webhook_endpoints", sa.column("id", sa.Integer()))
     endpoint_state = sa.table(
         "endpoint_quota_state",
         sa.column("endpoint_id"),

@@ -5,6 +5,7 @@ install-dev:
 
 lint:
 	ruff check .
+	ruff format --check .
 
 typecheck:
 	mypy

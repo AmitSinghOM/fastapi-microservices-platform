@@ -138,9 +138,7 @@ class AuthClient(_JsonClient):
             client=client,
         )
 
-    def register(
-        self, email: str, name: str, password: str
-    ) -> dict[str, Any]:
+    def register(self, email: str, name: str, password: str) -> dict[str, Any]:
         result = self._request(
             "POST",
             "/users/",
@@ -156,7 +154,9 @@ class AuthClient(_JsonClient):
             "/auth/login",
             data={"username": email, "password": password},
         )
-        token = result.get("access_token") if isinstance(result, dict) else None
+        token = (
+            result.get("access_token") if isinstance(result, dict) else None
+        )
         if not isinstance(token, str) or not token:
             raise ApiError(200, "INVALID_RESPONSE")
         return token

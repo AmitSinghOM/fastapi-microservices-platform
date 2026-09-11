@@ -8,24 +8,24 @@ from app.services.webhook_service import WebhookService
 
 class ServiceFactory:
     """Factory for creating service instances.
-    
+
     WHY Factory over inheritance:
     - Loose coupling between services
     - Easy mocking for tests
     - Centralized construction logic
     - Easy to swap implementations
-    
-    Interview line: "Factory avoids deep inheritance trees 
+
+    Interview line: "Factory avoids deep inheritance trees
     and keeps construction logic centralized."
     """
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-    
+
     def get_user_service(self) -> UserService:
         """Create UserService instance."""
         return UserService(db=self.db)
-    
+
     def get_item_service(self) -> ItemService:
         """Create ItemService instance."""
         return ItemService(db=self.db)

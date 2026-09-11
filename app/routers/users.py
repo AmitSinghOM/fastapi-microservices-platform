@@ -33,10 +33,11 @@ def _own_record_or_404(user_id: int, current_user: User) -> None:
         raise NotFoundError("User", user_id)
 
 
-@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_user(
-    user: UserCreate,
-    service: UserService = Depends(get_user_service)
+    user: UserCreate, service: UserService = Depends(get_user_service)
 ):
     """Register a new user.
 
@@ -54,7 +55,7 @@ async def get_own_user(
     current_user: User = Depends(get_current_active_user),
 ):
     """The authenticated user's own record.
-    
+
     Replaces the unauthenticated GET /users/ listing, which exposed every
     registered email address.
     """
@@ -65,7 +66,7 @@ async def get_own_user(
 async def get_user(
     user_id: int,
     current_user: User = Depends(get_current_active_user),
-    service: UserService = Depends(get_user_service)
+    service: UserService = Depends(get_user_service),
 ):
     """Get a user by ID. Only your own record."""
     _own_record_or_404(user_id, current_user)
@@ -77,7 +78,7 @@ async def update_user(
     user_id: int,
     user_data: UserUpdate,
     current_user: User = Depends(get_current_active_user),
-    service: UserService = Depends(get_user_service)
+    service: UserService = Depends(get_user_service),
 ):
     """Update a user by ID. Only your own record."""
     _own_record_or_404(user_id, current_user)
@@ -88,7 +89,7 @@ async def update_user(
 async def delete_user(
     user_id: int,
     current_user: User = Depends(get_current_active_user),
-    service: UserService = Depends(get_user_service)
+    service: UserService = Depends(get_user_service),
 ):
     """Delete a user by ID. Only your own record."""
     _own_record_or_404(user_id, current_user)
@@ -99,7 +100,7 @@ async def delete_user(
 async def deactivate_user(
     user_id: int,
     current_user: User = Depends(get_current_active_user),
-    service: UserService = Depends(get_user_service)
+    service: UserService = Depends(get_user_service),
 ):
     """Soft delete - deactivate your own account."""
     _own_record_or_404(user_id, current_user)

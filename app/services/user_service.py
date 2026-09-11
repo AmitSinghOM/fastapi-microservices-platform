@@ -117,7 +117,9 @@ class UserService(BaseService):
         return user
 
     @log_execution
-    async def update_or_raise(self, user_id: int, user_data: UserUpdate) -> User:
+    async def update_or_raise(
+        self, user_id: int, user_data: UserUpdate
+    ) -> User:
         user = await self.update(user_id, user_data)
         if not user:
             raise NotFoundError("User", user_id)

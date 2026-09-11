@@ -12,8 +12,8 @@ async def test_create_user(client: AsyncClient):
         json={
             "email": "test@example.com",
             "name": "Test User",
-            "password": "securepassword123"
-        }
+            "password": "securepassword123",
+        },
     )
     assert response.status_code == 201
     data = response.json()
@@ -24,10 +24,16 @@ async def test_create_user(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_create_user_never_returns_password_material(client: AsyncClient):
+async def test_create_user_never_returns_password_material(
+    client: AsyncClient,
+):
     response = await client.post(
         "/users/",
-        json={"email": "leak@example.com", "name": "N", "password": "hunter2hunter2"},
+        json={
+            "email": "leak@example.com",
+            "name": "N",
+            "password": "hunter2hunter2",
+        },
     )
 
     body = response.text.lower()
@@ -41,11 +47,11 @@ async def test_create_user_duplicate_email(client: AsyncClient):
     user_data = {
         "email": "duplicate@example.com",
         "name": "First User",
-        "password": "password123"
+        "password": "password123",
     }
-    
+
     await client.post("/users/", json=user_data)
-    
+
     response = await client.post("/users/", json=user_data)
     assert response.status_code == 409  # Conflict
     error = response.json()["error"]
@@ -89,8 +95,8 @@ async def test_update_user(client: AsyncClient, auth):
     user, headers = auth
 
     response = await client.patch(
-        f"/users/{user['id']}", headers=headers,
-        json={"name": "Updated Name"})
+        f"/users/{user['id']}", headers=headers, json={"name": "Updated Name"}
+    )
 
     assert response.status_code == 200
     assert response.json()["name"] == "Updated Name"
@@ -113,7 +119,8 @@ async def test_deactivate_user(client: AsyncClient, auth):
     user, headers = auth
 
     response = await client.post(
-        f"/users/{user['id']}/deactivate", headers=headers)
+        f"/users/{user['id']}/deactivate", headers=headers
+    )
 
     assert response.status_code == 200
     assert response.json()["is_active"] is False
@@ -127,15 +134,21 @@ async def test_deactivate_user(client: AsyncClient, auth):
 # any account.
 # =============================================================================
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("method,path", [
-    ("get", "/users/me"),
-    ("get", "/users/1"),
-    ("patch", "/users/1"),
-    ("delete", "/users/1"),
-    ("post", "/users/1/deactivate"),
-])
-async def test_user_endpoints_require_authentication(client: AsyncClient, method, path):
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("get", "/users/me"),
+        ("get", "/users/1"),
+        ("patch", "/users/1"),
+        ("delete", "/users/1"),
+        ("post", "/users/1/deactivate"),
+    ],
+)
+async def test_user_endpoints_require_authentication(
+    client: AsyncClient, method, path
+):
     request = getattr(client, method)
     kwargs = {"json": {"name": "x"}} if method == "patch" else {}
 
@@ -155,7 +168,9 @@ async def test_bulk_user_listing_is_gone(client: AsyncClient, auth):
 
 
 @pytest.mark.asyncio
-async def test_cannot_read_another_users_record(client: AsyncClient, auth, other_auth):
+async def test_cannot_read_another_users_record(
+    client: AsyncClient, auth, other_auth
+):
     _, headers = auth
     victim, _ = other_auth
 
@@ -165,7 +180,9 @@ async def test_cannot_read_another_users_record(client: AsyncClient, auth, other
 
 
 @pytest.mark.asyncio
-async def test_cannot_delete_another_users_account(client: AsyncClient, auth, other_auth):
+async def test_cannot_delete_another_users_account(
+    client: AsyncClient, auth, other_auth
+):
     _, headers = auth
     victim, victim_headers = other_auth
 
@@ -173,7 +190,9 @@ async def test_cannot_delete_another_users_account(client: AsyncClient, auth, ot
 
     assert response.status_code == 404
     # Victim's account survives.
-    assert (await client.get("/users/me", headers=victim_headers)).status_code == 200
+    assert (
+        await client.get("/users/me", headers=victim_headers)
+    ).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -184,7 +203,8 @@ async def test_cannot_deactivate_another_users_account(
     victim, victim_headers = other_auth
 
     response = await client.post(
-        f"/users/{victim['id']}/deactivate", headers=headers)
+        f"/users/{victim['id']}/deactivate", headers=headers
+    )
 
     assert response.status_code == 404
     still_active = await client.get("/users/me", headers=victim_headers)
@@ -209,15 +229,22 @@ async def test_registration_is_rate_limited(client: AsyncClient):
     for i in range(25):
         response = await client.post(
             "/users/",
-            json={"email": f"flood{i}@example.com", "name": "F",
-                  "password": "password123"},
+            json={
+                "email": f"flood{i}@example.com",
+                "name": "F",
+                "password": "password123",
+            },
         )
         codes.append(response.status_code)
 
     assert 429 in codes
     limited = await client.post(
         "/users/",
-        json={"email": "final@example.com", "name": "F", "password": "password123"},
+        json={
+            "email": "final@example.com",
+            "name": "F",
+            "password": "password123",
+        },
     )
     assert limited.status_code == 429
     assert "Retry-After" in limited.headers

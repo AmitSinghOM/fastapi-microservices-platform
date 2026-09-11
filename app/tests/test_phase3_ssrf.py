@@ -30,9 +30,7 @@ async def install_dns_answers(
         results = []
         for address in addresses:
             family = socket.AF_INET6 if ":" in address else socket.AF_INET
-            results.append(
-                (family, socket.SOCK_STREAM, 6, "", (address, 443))
-            )
+            results.append((family, socket.SOCK_STREAM, 6, "", (address, 443)))
         return results
 
     monkeypatch.setattr(loop, "getaddrinfo", fake_getaddrinfo)
@@ -189,9 +187,7 @@ async def test_proxy_connect_rejection_is_sanitized_and_counted(
 
     assert result.error == "egress_proxy_denied"
     assert result.retryable is False
-    assert security_deny_counts() == {
-        ("proxy", "proxy_connect_denied"): 1
-    }
+    assert security_deny_counts() == {("proxy", "proxy_connect_denied"): 1}
 
 
 @pytest.mark.asyncio

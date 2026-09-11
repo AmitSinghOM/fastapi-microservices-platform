@@ -84,9 +84,7 @@ async def test_cloudevents_delivery_uses_structured_media_type(
         requests.append(request)
         return httpx.Response(204)
 
-    monkeypatch.setattr(
-        delivery_module, "validate_webhook_url", allow_target
-    )
+    monkeypatch.setattr(delivery_module, "validate_webhook_url", allow_target)
     claim = ClaimedDelivery(
         id=1,
         public_id=str(uuid4()),

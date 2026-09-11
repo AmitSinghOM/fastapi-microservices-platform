@@ -22,9 +22,7 @@ def _canonical_json(value: object) -> bytes:
 
 
 def upgrade() -> None:
-    op.add_column(
-        "events", sa.Column("canonical_envelope", sa.LargeBinary())
-    )
+    op.add_column("events", sa.Column("canonical_envelope", sa.LargeBinary()))
     op.add_column(
         "deliveries",
         sa.Column("endpoint_public_id_snapshot", sa.String(36)),

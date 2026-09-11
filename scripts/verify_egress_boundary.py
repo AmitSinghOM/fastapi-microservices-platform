@@ -41,10 +41,13 @@ def expect_denied(host: str, port: int = 443) -> None:
 
 
 def query_rebind_once() -> None:
-    labels = b"".join(
-        bytes((len(label),)) + label.encode()
-        for label in "rebind.test".split(".")
-    ) + b"\x00"
+    labels = (
+        b"".join(
+            bytes((len(label),)) + label.encode()
+            for label in "rebind.test".split(".")
+        )
+        + b"\x00"
+    )
     packet = struct.pack("!HHHHHH", 7, 0x0100, 1, 0, 0, 0)
     packet += labels + struct.pack("!HH", 1, 1)
     client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

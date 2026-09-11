@@ -99,16 +99,13 @@ def test_unknown_tokens_are_ignored_not_fatal():
     now = int(time.time())
     headers = _standard_headers(now)
     headers["webhook-signature"] = (
-        "v1a,AAAA unknown "
-        + headers["webhook-signature"]
+        "v1a,AAAA unknown " + headers["webhook-signature"]
     )
     event = verify_request(BODY, headers, STANDARD_SECRET, now=now)
     assert event.event_id == "ev-1"
 
     legacy = _legacy_headers(now)
-    legacy["Webhook-Signature"] = (
-        legacy["Webhook-Signature"] + " v1,AAAA"
-    )
+    legacy["Webhook-Signature"] = legacy["Webhook-Signature"] + " v1,AAAA"
     event = verify_request(BODY, legacy, LEGACY_SECRET, now=now)
     assert event.event_id == "ev-1"
 
@@ -129,8 +126,12 @@ def test_standard_only_signature_functions():
         verify_signature(BODY, headers["webhook-signature"], LEGACY_SECRET)
     with pytest.raises(InvalidSignature):
         verify_signature_standard(
-            BODY, "ev-1", "not-digits",
-            headers["webhook-signature"], STANDARD_SECRET, now=now,
+            BODY,
+            "ev-1",
+            "not-digits",
+            headers["webhook-signature"],
+            STANDARD_SECRET,
+            now=now,
         )
 
 
@@ -187,9 +188,7 @@ def test_non_ascii_signature_token_fails_closed_not_typeerror():
     raised TypeError (a 500 for receivers) instead of InvalidSignature."""
     now = int(time.time())
     headers = _standard_headers(now)
-    only_bad = dict(
-        headers, **{"webhook-signature": "v1,签名不对"}
-    )
+    only_bad = dict(headers, **{"webhook-signature": "v1,签名不对"})
     with pytest.raises(InvalidSignature):
         verify_request(BODY, only_bad, STANDARD_SECRET, now=now)
     # A non-ASCII token alongside a valid one is ignored, not fatal.

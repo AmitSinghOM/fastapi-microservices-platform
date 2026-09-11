@@ -151,9 +151,7 @@ async def authorize_organization(
     role = OrganizationRole(role_value)
     if permission not in ORGANIZATION_ROLE_PERMISSIONS[role]:
         raise ForbiddenError()
-    _ensure_lifecycle_allows(
-        organization, permission, allow_deletion_pending
-    )
+    _ensure_lifecycle_allows(organization, permission, allow_deletion_pending)
     return organization
 
 
@@ -211,7 +209,5 @@ async def authorize_project(
     project_role = ProjectRole(project_role_value)
     if permission not in PROJECT_ROLE_PERMISSIONS[project_role]:
         raise ForbiddenError()
-    _ensure_lifecycle_allows(
-        organization, permission, allow_deletion_pending
-    )
+    _ensure_lifecycle_allows(organization, permission, allow_deletion_pending)
     return project

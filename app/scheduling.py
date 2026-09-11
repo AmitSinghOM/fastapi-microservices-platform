@@ -154,9 +154,7 @@ async def select_fair_deliveries(
     )
     endpoint_ids = sorted({delivery.endpoint_id for delivery in candidates})
     for organization_id in organization_ids:
-        await ensure_tenant_state(
-            session, organization_id, settings, now
-        )
+        await ensure_tenant_state(session, organization_id, settings, now)
     for endpoint_id in endpoint_ids:
         await ensure_endpoint_state(session, endpoint_id, settings, now)
 
@@ -308,9 +306,9 @@ async def select_fair_deliveries(
                 endpoint_balances[endpoint_id] -= 1.0
                 if is_retry:
                     endpoint_retry_balances[endpoint_id] -= 1.0
-                    endpoint_state.retry_tokens = (
-                        endpoint_retry_balances[endpoint_id]
-                    )
+                    endpoint_state.retry_tokens = endpoint_retry_balances[
+                        endpoint_id
+                    ]
                 if endpoint_state.circuit_state == "half_open":
                     endpoint_state.half_open_probe_delivery_id = delivery.id
                 endpoint_counts[endpoint_id] = (
@@ -319,12 +317,12 @@ async def select_fair_deliveries(
                 tenant_counts[organization_id] = (
                     int(tenant_counts.get(organization_id, 0)) + 1
                 )
-                endpoint_state_by_id[endpoint_id].delivery_tokens = (
-                    endpoint_balances[endpoint_id]
-                )
-                tenant_state_by_id[organization_id].endpoint_cursor_id = (
+                endpoint_state_by_id[
                     endpoint_id
-                )
+                ].delivery_tokens = endpoint_balances[endpoint_id]
+                tenant_state_by_id[
+                    organization_id
+                ].endpoint_cursor_id = endpoint_id
                 tenant_state_by_id[organization_id].updated_at = now
                 global_state.tenant_cursor_organization_id = organization_id
                 global_state.updated_at = now

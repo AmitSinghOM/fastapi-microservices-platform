@@ -57,15 +57,11 @@ def test_update_endpoint_sends_only_passed_fields() -> None:
         return httpx.Response(200, json={"public_id": "ep-1"})
 
     management = _management(handler)
-    management.update_endpoint(
-        "proj-1", "ep-1", event_types=["invoice.paid"]
-    )
+    management.update_endpoint("proj-1", "ep-1", event_types=["invoice.paid"])
 
     assert requests[0].method == "PATCH"
     assert requests[0].url.path == "/v1/projects/proj-1/endpoints/ep-1"
-    assert json.loads(requests[0].content) == {
-        "event_types": ["invoice.paid"]
-    }
+    assert json.loads(requests[0].content) == {"event_types": ["invoice.paid"]}
 
 
 def test_update_endpoint_explicit_none_clears_filter() -> None:
@@ -82,9 +78,7 @@ def test_update_endpoint_explicit_none_clears_filter() -> None:
 
 
 def test_update_endpoint_requires_a_change() -> None:
-    management = _management(
-        lambda request: httpx.Response(200, json={})
-    )
+    management = _management(lambda request: httpx.Response(200, json={}))
     with pytest.raises(ValueError):
         management.update_endpoint("proj-1", "ep-1")
 
@@ -100,8 +94,13 @@ class FakeManagement:
         return None
 
     def create_endpoint(
-        self, project_id, url, description, *,
-        event_types, signature_scheme=None,
+        self,
+        project_id,
+        url,
+        description,
+        *,
+        event_types,
+        signature_scheme=None,
     ):
         self.calls.append(
             ("create", project_id, url, description, event_types)
@@ -119,21 +118,32 @@ def test_cli_create_with_repeatable_event_type(monkeypatch, capsys) -> None:
 
     exit_code = cli.main(
         [
-            "endpoints", "create",
-            "--project", "proj-1",
-            "--url", "https://receiver.example/hook",
-            "--event-type", "order.*",
-            "--event-type", "user.created",
+            "endpoints",
+            "create",
+            "--project",
+            "proj-1",
+            "--url",
+            "https://receiver.example/hook",
+            "--event-type",
+            "order.*",
+            "--event-type",
+            "user.created",
         ]
     )
 
     assert exit_code == 0
-    assert fake.calls == [(
-        "create", "proj-1", "https://receiver.example/hook", None,
-        ["order.*", "user.created"],
-    )]
+    assert fake.calls == [
+        (
+            "create",
+            "proj-1",
+            "https://receiver.example/hook",
+            None,
+            ["order.*", "user.created"],
+        )
+    ]
     assert json.loads(capsys.readouterr().out)["event_types"] == [
-        "order.*", "user.created",
+        "order.*",
+        "user.created",
     ]
 
 
@@ -143,10 +153,14 @@ def test_cli_update_replaces_filter(monkeypatch, capsys) -> None:
 
     exit_code = cli.main(
         [
-            "endpoints", "update",
-            "--project", "proj-1",
-            "--endpoint", "ep-1",
-            "--event-type", "invoice.paid",
+            "endpoints",
+            "update",
+            "--project",
+            "proj-1",
+            "--endpoint",
+            "ep-1",
+            "--event-type",
+            "invoice.paid",
         ]
     )
 
@@ -162,17 +176,18 @@ def test_cli_update_all_events_clears_filter(monkeypatch) -> None:
 
     exit_code = cli.main(
         [
-            "endpoints", "update",
-            "--project", "proj-1",
-            "--endpoint", "ep-1",
+            "endpoints",
+            "update",
+            "--project",
+            "proj-1",
+            "--endpoint",
+            "ep-1",
             "--all-events",
         ]
     )
 
     assert exit_code == 0
-    assert fake.calls == [
-        ("update", "proj-1", "ep-1", {"event_types": None})
-    ]
+    assert fake.calls == [("update", "proj-1", "ep-1", {"event_types": None})]
 
 
 def test_cli_update_without_changes_errors(monkeypatch, capsys) -> None:
@@ -192,10 +207,14 @@ def test_cli_update_rejects_filter_conflict(monkeypatch, capsys) -> None:
     with pytest.raises(SystemExit) as excinfo:
         cli.main(
             [
-                "endpoints", "update",
-                "--project", "proj-1",
-                "--endpoint", "ep-1",
-                "--event-type", "a.b",
+                "endpoints",
+                "update",
+                "--project",
+                "proj-1",
+                "--endpoint",
+                "ep-1",
+                "--event-type",
+                "a.b",
                 "--all-events",
             ]
         )

@@ -79,9 +79,7 @@ class Organization(Base):
     deletion_scheduled_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
 
-    members = relationship(
-        "OrganizationMember", cascade="all, delete-orphan"
-    )
+    members = relationship("OrganizationMember", cascade="all, delete-orphan")
     projects = relationship("Project", cascade="all, delete-orphan")
     policy = relationship(
         "OrganizationPolicy", cascade="all, delete-orphan", uselist=False
@@ -182,9 +180,7 @@ class Project(Base):
     organization = relationship("Organization", overlaps="projects")
     members = relationship("ProjectMember", cascade="all, delete-orphan")
     api_keys = relationship("ApiKey", cascade="all, delete-orphan")
-    endpoints = relationship(
-        "WebhookEndpoint", cascade="all, delete-orphan"
-    )
+    endpoints = relationship("WebhookEndpoint", cascade="all, delete-orphan")
     events = relationship("Event", cascade="all, delete-orphan")
 
 

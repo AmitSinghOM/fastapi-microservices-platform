@@ -133,9 +133,7 @@ async def test_claim_uses_immutable_acceptance_snapshots(
         captured.append(request)
         return httpx.Response(200)
 
-    monkeypatch.setattr(
-        delivery_module, "validate_webhook_url", allow_target
-    )
+    monkeypatch.setattr(delivery_module, "validate_webhook_url", allow_target)
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(receiver)
     ) as client:
@@ -316,9 +314,7 @@ async def test_long_request_renews_lease_while_in_flight(
         await asyncio.wait_for(two_renewals.wait(), timeout=0.4)
         return httpx.Response(200)
 
-    monkeypatch.setattr(
-        delivery_module, "validate_webhook_url", allow_target
-    )
+    monkeypatch.setattr(delivery_module, "validate_webhook_url", allow_target)
     settings = worker_settings().model_copy(
         update={
             "worker_heartbeat_seconds": 0.02,
@@ -340,9 +336,7 @@ async def test_long_request_renews_lease_while_in_flight(
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(receiver)
     ) as client:
-        service = CountingService(
-            sqlite_session_factory, client, settings
-        )
+        service = CountingService(sqlite_session_factory, client, settings)
         claim = (await service.claim_due(1))[0]
         assert await service.deliver(claim) is True
         assert service.renewals >= 2

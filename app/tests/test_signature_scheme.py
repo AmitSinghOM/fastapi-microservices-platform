@@ -46,7 +46,7 @@ def test_secret_serializations_encode_same_digest():
     digest = endpoint_secret_digest(SIGNING_KEY, ENDPOINT_ID, 1)
     assert len(digest) == 32
     padded = legacy.removeprefix("whsec_") + "=="
-    assert base64.urlsafe_b64decode(padded[: 44]) == digest
+    assert base64.urlsafe_b64decode(padded[:44]) == digest
     assert base64.b64decode(standard.removeprefix("whsec_")) == digest
     assert legacy != standard
 
@@ -66,7 +66,9 @@ def test_frozen_golden_vectors():
         "whsec_vTRXG2CwqFf6P80ez648Z8G7XaZ43olDednJZdwY4/Y="
     )
     assert sign_payload_standard(
-        "ev-1", BODY, endpoint_secret_digest(SIGNING_KEY, ENDPOINT_ID, 1),
+        "ev-1",
+        BODY,
+        endpoint_secret_digest(SIGNING_KEY, ENDPOINT_ID, 1),
         1767225600,
     ) == (1767225600, "v1,iH/jZ1lyFWRV9aCjqdIBDtxT1BlnAWLzUAmn+fLcBU0=")
 
@@ -75,7 +77,9 @@ def test_standard_signature_verified_by_official_library():
     """The acceptance gate: the spec's own library must verify our bytes."""
     now = int(time.time())
     timestamp, signature = sign_payload_standard(
-        "ev-1", BODY, endpoint_secret_digest(SIGNING_KEY, ENDPOINT_ID, 1),
+        "ev-1",
+        BODY,
+        endpoint_secret_digest(SIGNING_KEY, ENDPOINT_ID, 1),
         now,
     )
     verifier = Webhook(endpoint_secret_standard(SIGNING_KEY, ENDPOINT_ID, 1))
@@ -114,18 +118,23 @@ async def test_api_scheme_lifecycle_and_snapshots(
 
     legacy = await _create_endpoint(client, bearer, project_id)
     assert legacy["signature_scheme"] == "legacy"
-    assert "_" in legacy["signing_secret"] or "-" in legacy[
-        "signing_secret"
-    ] or not legacy["signing_secret"].endswith("=")
+    assert (
+        "_" in legacy["signing_secret"]
+        or "-" in legacy["signing_secret"]
+        or not legacy["signing_secret"].endswith("=")
+    )
 
     standard = await _create_endpoint(
         client, bearer, project_id, scheme="standard"
     )
     assert standard["signature_scheme"] == "standard"
     # Standard serialization: padded standard base64 of 32 bytes.
-    assert base64.b64decode(
-        standard["signing_secret"].removeprefix("whsec_")
-    ).__len__() == 32
+    assert (
+        base64.b64decode(
+            standard["signing_secret"].removeprefix("whsec_")
+        ).__len__()
+        == 32
+    )
 
     accepted = await client.post(
         "/v1/events",
@@ -223,9 +232,7 @@ async def test_worker_emits_spec_exact_headers(
     signature = request.headers["webhook-signature"]
     assert signature.startswith("v1,")
     verifier = Webhook(
-        endpoint_secret_standard(
-            settings.webhook_signing_key, ENDPOINT_ID, 1
-        )
+        endpoint_secret_standard(settings.webhook_signing_key, ENDPOINT_ID, 1)
     )
     verified = verifier.verify(
         request.content.decode(),

@@ -88,7 +88,9 @@ async def postgres_session_factory():
         pytest.fail("TEST_POSTGRES_URL must use postgresql+asyncpg")
 
     schema = f"webhook_test_{uuid4().hex}"
-    admin_engine = create_async_engine(database_url, isolation_level="AUTOCOMMIT")
+    admin_engine = create_async_engine(
+        database_url, isolation_level="AUTOCOMMIT"
+    )
     async with admin_engine.connect() as connection:
         await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
 

@@ -20,17 +20,22 @@ def decode_name(packet: bytes, offset: int = 12) -> tuple[str, int]:
 
 
 def encode_name(name: str) -> bytes:
-    return b"".join(
-        bytes((len(label),)) + label.encode("ascii")
-        for label in name.rstrip(".").split(".")
-    ) + b"\x00"
+    return (
+        b"".join(
+            bytes((len(label),)) + label.encode("ascii")
+            for label in name.rstrip(".").split(".")
+        )
+        + b"\x00"
+    )
 
 
 def address_answer(owner: bytes, address: str, ttl: int = 0) -> bytes:
     ip = ipaddress.ip_address(address)
     record_type = 1 if ip.version == 4 else 28
     packed = ip.packed
-    return owner + struct.pack("!HHIH", record_type, 1, ttl, len(packed)) + packed
+    return (
+        owner + struct.pack("!HHIH", record_type, 1, ttl, len(packed)) + packed
+    )
 
 
 def cname_answer(owner: bytes, target: str) -> bytes:
@@ -82,9 +87,7 @@ class DnsServer:
             )
         except socket.gaierror:
             return []
-        addresses = sorted(
-            {cast(str, result[4][0]) for result in results}
-        )
+        addresses = sorted({cast(str, result[4][0]) for result in results})
         return [
             address_answer(owner, address, ttl=30)
             for address in addresses
@@ -93,7 +96,9 @@ class DnsServer:
 
     def response(self, packet: bytes) -> bytes:
         name, question_end = decode_name(packet)
-        query_type = struct.unpack("!H", packet[question_end : question_end + 2])[0]
+        query_type = struct.unpack(
+            "!H", packet[question_end : question_end + 2]
+        )[0]
         question_end += 4
         answers = self.answers(name, query_type)
         header = struct.pack(

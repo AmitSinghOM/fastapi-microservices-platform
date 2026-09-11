@@ -105,9 +105,7 @@ async def insert_do_nothing(
     )
 
 
-async def ensure_global_state(
-    session: AsyncSession, now: datetime
-) -> None:
+async def ensure_global_state(session: AsyncSession, now: datetime) -> None:
     await insert_do_nothing(
         session,
         GlobalControlState,
@@ -240,9 +238,7 @@ class AdmissionController:
             select(func.min(due_at)).where(
                 or_(
                     and_(
-                        Delivery.status.in_(
-                            ("pending", "retry_scheduled")
-                        ),
+                        Delivery.status.in_(("pending", "retry_scheduled")),
                         Delivery.next_attempt_at <= now,
                     ),
                     and_(
@@ -333,9 +329,7 @@ class AdmissionController:
         event_balance = self._event_balance(state, now)
         delivery_balance = self._delivery_balance(state, delivery_count, now)
         if event_balance.retry_after is not None:
-            raise QuotaExceededError(
-                "event_rate", event_balance.retry_after
-            )
+            raise QuotaExceededError("event_rate", event_balance.retry_after)
         if delivery_balance.retry_after is not None:
             raise QuotaExceededError(
                 "delivery_rate", delivery_balance.retry_after
@@ -379,9 +373,7 @@ class AdmissionController:
         )
         delivery_balance = self._delivery_balance(state, count, now)
         if replay_balance.retry_after is not None:
-            raise QuotaExceededError(
-                "replay_rate", replay_balance.retry_after
-            )
+            raise QuotaExceededError("replay_rate", replay_balance.retry_after)
         if delivery_balance.retry_after is not None:
             raise QuotaExceededError(
                 "delivery_rate", delivery_balance.retry_after
@@ -409,9 +401,7 @@ class AdmissionController:
         )
         if state is None:
             raise RuntimeError("Tenant quota state is unavailable")
-        endpoint_count_query = select(
-            func.count(WebhookEndpoint.id)
-        ).where(
+        endpoint_count_query = select(func.count(WebhookEndpoint.id)).where(
             WebhookEndpoint.project_id == project_id,
             WebhookEndpoint.is_active.is_(True),
         )

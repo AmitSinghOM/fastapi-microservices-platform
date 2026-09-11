@@ -55,9 +55,7 @@ class LifecycleRunResult:
 
     def merged(self, other: "LifecycleRunResult") -> "LifecycleRunResult":
         return LifecycleRunResult(
-            responses_purged=(
-                self.responses_purged + other.responses_purged
-            ),
+            responses_purged=(self.responses_purged + other.responses_purged),
             payloads_purged=self.payloads_purged + other.payloads_purged,
             deliveries_canceled=(
                 self.deliveries_canceled + other.deliveries_canceled
@@ -92,7 +90,11 @@ def _expired_by_policy(
     retention_days_column: Any,
 ) -> Any:
     if session.get_bind().dialect.name == "sqlite":
-        modifier = literal("-") + cast(retention_days_column, String) + literal(" days")
+        modifier = (
+            literal("-")
+            + cast(retention_days_column, String)
+            + literal(" days")
+        )
         return func.datetime(timestamp_column) <= func.datetime(
             func.current_timestamp(), modifier
         )
@@ -157,9 +159,7 @@ class LifecycleService:
                                 ),
                             )
                             .order_by(LoginThrottle.updated_at)
-                            .limit(
-                                self.settings.lifecycle_cleanup_batch_size
-                            ),
+                            .limit(self.settings.lifecycle_cleanup_batch_size),
                             session,
                             LoginThrottle,
                         )
@@ -203,7 +203,6 @@ class LifecycleService:
                     attempt.response_purged_at = purged_at
                 return LifecycleRunResult(responses_purged=len(attempts))
 
-
     async def _purge_event_payloads(self) -> LifecycleRunResult:
         async with self.session_factory() as session:
             async with session.begin():
@@ -239,7 +238,9 @@ class LifecycleService:
                     .limit(self.settings.lifecycle_cleanup_batch_size)
                 )
                 events = list(
-                    await session.scalars(_claim_rows(statement, session, Event))
+                    await session.scalars(
+                        _claim_rows(statement, session, Event)
+                    )
                 )
                 if not events:
                     return LifecycleRunResult()
@@ -297,7 +298,9 @@ class LifecycleService:
                 )
                 if canceled:
                     return LifecycleRunResult(deliveries_canceled=canceled)
-                if await self._has_live_delivery(session, organization.id, now):
+                if await self._has_live_delivery(
+                    session, organization.id, now
+                ):
                     return LifecycleRunResult()
 
                 deleted = await self._delete_delivery_batch(
@@ -313,7 +316,6 @@ class LifecycleService:
                 return await self._delete_empty_organization(
                     session, operation, organization, now
                 )
-
 
     async def _claim_operation(
         self, session: AsyncSession, now: datetime
@@ -437,7 +439,6 @@ class LifecycleService:
         if event_ids:
             await session.execute(delete(Event).where(Event.id.in_(event_ids)))
         return len(event_ids)
-
 
     async def _delete_empty_organization(
         self,

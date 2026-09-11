@@ -44,6 +44,7 @@ ALGORITHM = "HS256"
 # Passwords
 # ──────────────────────────────────────────────────────────────────
 
+
 def hash_password(password: str) -> str:
     """Hash a password for storage."""
     _validate_password_length(password)
@@ -61,8 +62,11 @@ def verify_password(plain: str, stored: str) -> bool:
         return False
 
     if _is_legacy(stored):
-        expected = stored[len(LEGACY_SHA256_PREFIX):] if stored.startswith(
-            LEGACY_SHA256_PREFIX) else stored
+        expected = (
+            stored[len(LEGACY_SHA256_PREFIX) :]
+            if stored.startswith(LEGACY_SHA256_PREFIX)
+            else stored
+        )
         candidate = hashlib.sha256(plain.encode()).hexdigest()
         return hmac.compare_digest(candidate, expected)
 
@@ -88,7 +92,8 @@ def _is_legacy(stored: str) -> bool:
     if stored.startswith(LEGACY_SHA256_PREFIX):
         return True
     return len(stored) == 64 and all(
-        c in "0123456789abcdef" for c in stored.lower())
+        c in "0123456789abcdef" for c in stored.lower()
+    )
 
 
 def _validate_password_length(password: str) -> None:
@@ -102,12 +107,14 @@ def _validate_password_length(password: str) -> None:
     encoded = password.encode("utf-8")
     if len(encoded) > 72:
         raise ValueError(
-            "Password must be at most 72 bytes; bcrypt truncates beyond that")
+            "Password must be at most 72 bytes; bcrypt truncates beyond that"
+        )
 
 
 # ──────────────────────────────────────────────────────────────────
 # Access tokens
 # ──────────────────────────────────────────────────────────────────
+
 
 def create_access_token(
     subject: str | int,
@@ -118,7 +125,8 @@ def create_access_token(
     settings = get_settings()
     now = datetime.now(timezone.utc)
     lifetime = expires_delta or timedelta(
-        minutes=settings.access_token_expire_minutes)
+        minutes=settings.access_token_expire_minutes
+    )
 
     payload: dict[str, Any] = {
         "sub": str(subject),
@@ -130,8 +138,9 @@ def create_access_token(
     if extra_claims:
         # Never let a caller overwrite the security-relevant claims.
         reserved = {"sub", "iat", "nbf", "exp", "jti"}
-        payload.update({
-            k: v for k, v in extra_claims.items() if k not in reserved})
+        payload.update(
+            {k: v for k, v in extra_claims.items() if k not in reserved}
+        )
 
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 

@@ -24,7 +24,9 @@ def test_producer_sends_one_request_with_stable_idempotency() -> None:
     client = httpx.Client(
         transport=httpx.MockTransport(handler), base_url="https://api.example"
     )
-    producer = Producer("https://ignored.example", "producer-key", client=client)
+    producer = Producer(
+        "https://ignored.example", "producer-key", client=client
+    )
     result = producer.send_event(
         "order.created",
         {"order_id": "42"},
@@ -47,7 +49,9 @@ def test_api_error_does_not_expose_response_body() -> None:
         ),
         base_url="https://api.example",
     )
-    producer = Producer("https://ignored.example", "producer-key", client=client)
+    producer = Producer(
+        "https://ignored.example", "producer-key", client=client
+    )
 
     with pytest.raises(ApiError) as captured:
         producer.send_event("order.created", {}, "order-42")

@@ -304,9 +304,9 @@ async def test_concurrent_distinct_events_share_tenant_burst(
         return_exceptions=True,
     )
     assert sum(isinstance(result, Event) for result in results) == 1
-    assert sum(
-        isinstance(result, QuotaExceededError) for result in results
-    ) == 1
+    assert (
+        sum(isinstance(result, QuotaExceededError) for result in results) == 1
+    )
     async with postgres_session_factory() as session:
         assert await session.scalar(select(func.count(Event.id))) == 1
         assert await session.scalar(select(func.count(Delivery.id))) == 1
@@ -341,9 +341,7 @@ async def test_competing_workers_share_global_tenant_and_endpoint_caps(
 
     claims = [claim for batch in worker_claims for claim in batch]
     assert len(claims) == 3
-    organization_counts = Counter(
-        claim.organization_id for claim in claims
-    )
+    organization_counts = Counter(claim.organization_id for claim in claims)
     endpoint_counts = Counter(claim.endpoint_id for claim in claims)
     assert set(organization_counts) == {
         first_organization,
@@ -378,9 +376,7 @@ async def test_noisy_tenant_keeps_healthy_age_within_twice_baseline(
     assert baseline_due is not None
 
     async with httpx.AsyncClient() as client:
-        service = DeliveryService(
-            postgres_session_factory, client, settings
-        )
+        service = DeliveryService(postgres_session_factory, client, settings)
         baseline_claim = (await service.claim_due(1))[0]
         baseline_age = (
             datetime.now(timezone.utc) - baseline_due
@@ -426,9 +422,7 @@ async def test_noisy_tenant_keeps_healthy_age_within_twice_baseline(
                     datetime.now(timezone.utc) - healthy_due
                 ).total_seconds()
                 break
-            await mark_succeeded(
-                postgres_session_factory, claim.public_id
-            )
+            await mark_succeeded(postgres_session_factory, claim.public_id)
 
     assert healthy_position is not None
     assert healthy_position <= 2

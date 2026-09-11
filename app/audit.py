@@ -33,9 +33,7 @@ _MAX_TOTAL_VALUES = 256
 _MAX_KEY_LENGTH = 100
 _MAX_STRING_LENGTH = 2_048
 _CREDENTIAL_VALUE = re.compile(r"\A[A-Za-z0-9_+/=-]{40,}\Z")
-_JWT_VALUE = re.compile(
-    r"\A[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\Z"
-)
+_JWT_VALUE = re.compile(r"\A[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\Z")
 _SENSITIVE_VALUE_PARTS = (
     "authorization:",
     "bearer ",
@@ -164,9 +162,7 @@ async def list_audit(
         == organization_public_id
     )
     if action is not None:
-        statement = statement.where(
-            AdministrativeAuditEvent.action == action
-        )
+        statement = statement.where(AdministrativeAuditEvent.action == action)
     if resource_type is not None:
         statement = statement.where(
             AdministrativeAuditEvent.resource_type == resource_type
@@ -176,9 +172,7 @@ async def list_audit(
         statement = statement.where(
             or_(
                 AdministrativeAuditEvent.created_at < before_created_at,
-                (
-                    AdministrativeAuditEvent.created_at == before_created_at
-                )
+                (AdministrativeAuditEvent.created_at == before_created_at)
                 & (AdministrativeAuditEvent.id < cursor_id),
             )
         )

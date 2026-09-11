@@ -40,7 +40,8 @@ async def login(
     """
     await check_login_allowed(db, form_data.username)
     user = await service.authenticate(
-        email=form_data.username, password=form_data.password)
+        email=form_data.username, password=form_data.password
+    )
     if user is None:
         await record_login_failure(db, form_data.username)
         raise UnauthorizedError("Incorrect email or password")

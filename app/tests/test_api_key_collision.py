@@ -63,8 +63,7 @@ async def test_creation_retries_colliding_prefix(
         "/v1/organizations", headers=bearer_headers
     )
     project_list = await client.get(
-        f"/v1/organizations/{organization.json()[0]['public_id']}"
-        "/projects",
+        f"/v1/organizations/{organization.json()[0]['public_id']}/projects",
         headers=bearer_headers,
     )
     project_id = project_list.json()[0]["public_id"]
@@ -110,8 +109,7 @@ async def test_creation_exhausted_prefix_allocation_conflicts(
         "/v1/organizations", headers=bearer_headers
     )
     project_list = await client.get(
-        f"/v1/organizations/{organization.json()[0]['public_id']}"
-        "/projects",
+        f"/v1/organizations/{organization.json()[0]['public_id']}/projects",
         headers=bearer_headers,
     )
     project_id = project_list.json()[0]["public_id"]

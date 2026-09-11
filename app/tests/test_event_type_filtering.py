@@ -107,9 +107,7 @@ async def test_fanout_respects_subscriptions(
     order_targets = await _delivery_endpoint_ids(
         db_session, order_event["public_id"]
     )
-    assert order_targets == {
-        unfiltered["public_id"], orders_only["public_id"]
-    }
+    assert order_targets == {unfiltered["public_id"], orders_only["public_id"]}
 
     user_targets = await _delivery_endpoint_ids(
         db_session, user_event["public_id"]
@@ -201,7 +199,10 @@ async def test_filter_validation_rejects_bad_input(
         assert response.status_code == 422, (bad, response.text)
 
     deduped = await _endpoint(
-        client, bearer, project_id, "dedupe",
+        client,
+        bearer,
+        project_id,
+        "dedupe",
         ["b.two", "a.one", "b.two"],
     )
     assert deduped["event_types"] == ["a.one", "b.two"]

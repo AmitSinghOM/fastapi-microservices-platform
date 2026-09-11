@@ -138,8 +138,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     @staticmethod
     def _is_limited(request: Request) -> bool:
         return (
-            request.method == "POST"
-            and request.url.path in RATE_LIMITED_PATHS
+            request.method == "POST" and request.url.path in RATE_LIMITED_PATHS
         )
 
     def _check(self, key: str) -> tuple[bool, int]:

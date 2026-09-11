@@ -22,7 +22,9 @@ class FakeProducer:
         return {"public_id": "event-1"}
 
 
-def test_event_command_reads_payload_file(monkeypatch, tmp_path, capsys) -> None:
+def test_event_command_reads_payload_file(
+    monkeypatch, tmp_path, capsys
+) -> None:
     payload = tmp_path / "payload.json"
     payload.write_text('{"order_id":"42"}', encoding="utf-8")
     monkeypatch.setattr(cli, "_producer", lambda base_url: FakeProducer())
@@ -158,7 +160,9 @@ class FakeManagementClient:
         return {"public_id": api_key_id, "revoked_at": "now"}
 
 
-def test_organization_and_api_key_commands_dispatch(monkeypatch, capsys) -> None:
+def test_organization_and_api_key_commands_dispatch(
+    monkeypatch, capsys
+) -> None:
     management = FakeManagementClient()
     monkeypatch.setattr(cli, "_management", lambda base_url: management)
 

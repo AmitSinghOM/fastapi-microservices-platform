@@ -127,9 +127,7 @@ def _secret_key_bytes(secret: str) -> bytes | None:
 
 
 def _header_has_legacy_token(header: str) -> bool:
-    return any(
-        "=" in token.partition(",")[0] for token in header.split()
-    )
+    return any("=" in token.partition(",")[0] for token in header.split())
 
 
 def verify_signature(
@@ -238,7 +236,9 @@ def verify_request(
     try:
         document = json.loads(raw_body)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ReceiverVerificationError("Webhook body is not valid JSON") from exc
+        raise ReceiverVerificationError(
+            "Webhook body is not valid JSON"
+        ) from exc
     if not isinstance(document, dict):
         raise ReceiverVerificationError("Webhook body must be a JSON object")
     if document.get("id") != event_id or document.get("type") != event_type:

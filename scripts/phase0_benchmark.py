@@ -107,9 +107,7 @@ def percentile(values: list[float], fraction: float) -> float:
 
 
 def checked_database_url() -> tuple[str, str]:
-    value = os.getenv("PHASE0_POSTGRES_URL") or os.getenv(
-        "TEST_POSTGRES_URL"
-    )
+    value = os.getenv("PHASE0_POSTGRES_URL") or os.getenv("TEST_POSTGRES_URL")
     if not value:
         raise SystemExit("Set PHASE0_POSTGRES_URL or TEST_POSTGRES_URL")
     url = make_url(value)

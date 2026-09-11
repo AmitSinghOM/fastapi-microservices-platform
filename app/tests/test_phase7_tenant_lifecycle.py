@@ -63,9 +63,7 @@ async def test_atomic_defaults_and_least_privilege_memberships(
 ):
     owner_user, owner_headers = auth
     other_user, other_headers = other_auth
-    organization_id, project_id = await create_tenant(
-        client, owner_headers
-    )
+    organization_id, project_id = await create_tenant(client, owner_headers)
 
     assert await db_session.scalar(select(TenantQuotaState)) is not None
     policy = await db_session.scalar(select(OrganizationPolicy))
@@ -191,15 +189,14 @@ async def test_key_and_endpoint_rotation_and_replay_safety(
     assert key_data["expires_at"] is not None
 
     rotated_key = await client.post(
-        f"/v1/projects/{project_id}/api-keys/"
-        f"{key_data['public_id']}/rotate",
+        f"/v1/projects/{project_id}/api-keys/{key_data['public_id']}/rotate",
         headers=headers,
         json={"overlap_seconds": 10},
     )
     assert rotated_key.status_code == 201, rotated_key.text
     rotated_data = rotated_key.json()
-    assert rotated_data["rotation_family_id"] == (
-        key_data["rotation_family_id"]
+    assert (
+        rotated_data["rotation_family_id"] == (key_data["rotation_family_id"])
     )
     old_key = await db_session.scalar(
         select(ApiKey).where(ApiKey.public_id == key_data["public_id"])
@@ -261,8 +258,7 @@ async def test_key_and_endpoint_rotation_and_replay_safety(
     await db_session.commit()
 
     replay = await client.post(
-        f"/v1/projects/{project_id}/deliveries/"
-        f"{delivery.public_id}/replay",
+        f"/v1/projects/{project_id}/deliveries/{delivery.public_id}/replay",
         headers=headers,
     )
     assert replay.status_code == 409
@@ -272,8 +268,7 @@ async def test_key_and_endpoint_rotation_and_replay_safety(
     event.canonical_envelope = None
     await db_session.commit()
     missing_envelope = await client.post(
-        f"/v1/projects/{project_id}/deliveries/"
-        f"{delivery.public_id}/replay",
+        f"/v1/projects/{project_id}/deliveries/{delivery.public_id}/replay",
         headers=headers,
     )
     assert missing_envelope.status_code == 409
@@ -282,8 +277,7 @@ async def test_key_and_endpoint_rotation_and_replay_safety(
     event.payload_purged_at = datetime.now(timezone.utc)
     await db_session.commit()
     purge_marked = await client.post(
-        f"/v1/projects/{project_id}/deliveries/"
-        f"{delivery.public_id}/replay",
+        f"/v1/projects/{project_id}/deliveries/{delivery.public_id}/replay",
         headers=headers,
     )
     assert purge_marked.status_code == 409
@@ -292,8 +286,7 @@ async def test_key_and_endpoint_rotation_and_replay_safety(
     delivery.signing_secret_version_snapshot = 999
     await db_session.commit()
     missing_version = await client.post(
-        f"/v1/projects/{project_id}/deliveries/"
-        f"{delivery.public_id}/replay",
+        f"/v1/projects/{project_id}/deliveries/{delivery.public_id}/replay",
         headers=headers,
     )
     assert missing_version.status_code == 409
@@ -303,16 +296,14 @@ async def test_key_and_endpoint_rotation_and_replay_safety(
     versions[0].retire_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     await db_session.commit()
     retired_replay = await client.post(
-        f"/v1/projects/{project_id}/deliveries/"
-        f"{delivery.public_id}/replay",
+        f"/v1/projects/{project_id}/deliveries/{delivery.public_id}/replay",
         headers=headers,
     )
     assert retired_replay.status_code == 409
     assert "version" in retired_replay.json()["error"]["message"]
 
     revoked = await client.delete(
-        f"/v1/projects/{project_id}/api-keys/"
-        f"{rotated_data['public_id']}",
+        f"/v1/projects/{project_id}/api-keys/{rotated_data['public_id']}",
         headers=headers,
     )
     assert revoked.status_code == 200, revoked.text
@@ -391,8 +382,7 @@ async def test_policy_audit_export_purge_and_deletion_lifecycle(
     delivery = await db_session.scalar(select(Delivery))
     assert delivery is not None
     canceled = await client.post(
-        f"/v1/projects/{project_id}/deliveries/"
-        f"{delivery.public_id}/cancel",
+        f"/v1/projects/{project_id}/deliveries/{delivery.public_id}/cancel",
         headers=headers,
         json={"reason": "operator request"},
     )
@@ -525,8 +515,7 @@ async def test_policy_audit_export_purge_and_deletion_lifecycle(
     )
     assert repeated_request.status_code == 202, repeated_request.text
     assert (
-        repeated_request.json()["public_id"]
-        == requested.json()["public_id"]
+        repeated_request.json()["public_id"] == requested.json()["public_id"]
     )
     owner_status = await client.get(
         f"/v1/organizations/{organization_id}/deletion", headers=headers

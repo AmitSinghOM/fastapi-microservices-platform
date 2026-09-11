@@ -132,9 +132,7 @@ def sign_payload_standard(
     timestamps are integers, so neither can contain the ``.`` delimiter.
     """
     timestamp = timestamp if timestamp is not None else int(time.time())
-    signed = (
-        f"{event_id}.{timestamp}.".encode("ascii") + payload_bytes
-    )
+    signed = f"{event_id}.{timestamp}.".encode("ascii") + payload_bytes
     digest = hmac.new(key, signed, hashlib.sha256).digest()
     return timestamp, "v1," + b64encode(digest).decode()
 

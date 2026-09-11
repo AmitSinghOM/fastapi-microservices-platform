@@ -14,7 +14,9 @@ _CSP = (
 )
 
 
-def _asset(name: str, media_type: str, *, document: bool = False) -> FileResponse:
+def _asset(
+    name: str, media_type: str, *, document: bool = False
+) -> FileResponse:
     headers = {"Cache-Control": "no-store"}
     if document:
         headers.update(

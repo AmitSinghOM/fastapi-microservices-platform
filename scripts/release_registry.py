@@ -334,8 +334,7 @@ def download(
     for filename, content in downloaded.items():
         (dist_dir / filename).write_bytes(content)
     print(
-        f"downloaded verified {repository} artifacts "
-        f"after cooling-off: {age}"
+        f"downloaded verified {repository} artifacts after cooling-off: {age}"
     )
 
 
@@ -356,9 +355,7 @@ def _parser() -> argparse.ArgumentParser:
     download_command.add_argument("--version", required=True)
     download_command.add_argument("--manifest", type=Path, required=True)
     download_command.add_argument("--dist-dir", type=Path, required=True)
-    download_command.add_argument(
-        "--minimum-age-hours", type=int, default=0
-    )
+    download_command.add_argument("--minimum-age-hours", type=int, default=0)
     return parser
 
 

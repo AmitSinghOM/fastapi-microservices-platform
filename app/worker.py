@@ -24,9 +24,7 @@ from app.services.delivery_service import ClaimedDelivery, DeliveryService
 logger = logging.getLogger(__name__)
 
 
-async def _run_claim(
-    service: DeliveryService, claim: ClaimedDelivery
-) -> None:
+async def _run_claim(service: DeliveryService, claim: ClaimedDelivery) -> None:
     try:
         await service.deliver(claim)
     except asyncio.CancelledError:
@@ -54,9 +52,7 @@ async def run_delivery_loop(
             if done:
                 await asyncio.gather(*done, return_exceptions=True)
                 in_flight -= done
-            set_worker_in_flight(
-                len(in_flight), settings.worker_concurrency
-            )
+            set_worker_in_flight(len(in_flight), settings.worker_concurrency)
             available = settings.worker_concurrency - len(in_flight)
             if available > 0:
                 claims = await service.claim_due(

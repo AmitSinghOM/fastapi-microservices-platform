@@ -267,9 +267,7 @@ async def cancel_organization_deletion(
     user: User = Depends(get_current_active_user),
     service: WebhookService = Depends(get_webhook_service),
 ):
-    return await service.cancel_organization_deletion(
-        user.id, organization_id
-    )
+    return await service.cancel_organization_deletion(user.id, organization_id)
 
 
 @router.post(
@@ -405,9 +403,7 @@ async def create_api_key(
     return ApiKeyCreated(**data, plaintext_key=plaintext)
 
 
-@router.get(
-    "/projects/{project_id}/api-keys", response_model=list[ApiKeyOut]
-)
+@router.get("/projects/{project_id}/api-keys", response_model=list[ApiKeyOut])
 async def list_api_keys(
     project_id: str,
     pagination: tuple[int, int] = Depends(page),
@@ -437,9 +433,7 @@ async def revoke_api_key(
 async def rotate_api_key(
     project_id: str,
     key_id: str,
-    body: ApiKeyRotateRequest = Body(
-        default_factory=ApiKeyRotateRequest
-    ),
+    body: ApiKeyRotateRequest = Body(default_factory=ApiKeyRotateRequest),
     user: User = Depends(get_current_active_user),
     service: WebhookService = Depends(get_webhook_service),
 ):
@@ -465,8 +459,12 @@ async def create_endpoint(
     service: WebhookService = Depends(get_webhook_service),
 ):
     endpoint, secret = await service.create_endpoint(
-        user.id, project_id, str(body.url), body.description,
-        body.event_types, body.signature_scheme,
+        user.id,
+        project_id,
+        str(body.url),
+        body.description,
+        body.event_types,
+        body.signature_scheme,
     )
     data = EndpointOut.model_validate(endpoint).model_dump()
     return EndpointCreated(**data, signing_secret=secret)
@@ -528,9 +526,11 @@ async def rotate_endpoint_secret(
     user: User = Depends(get_current_active_user),
     service: WebhookService = Depends(get_webhook_service),
 ):
-    endpoint, secret, previous_valid_until = (
-        await service.rotate_endpoint_secret(user.id, project_id, endpoint_id)
-    )
+    (
+        endpoint,
+        secret,
+        previous_valid_until,
+    ) = await service.rotate_endpoint_secret(user.id, project_id, endpoint_id)
     return EndpointSecretRotated(
         public_id=endpoint.public_id,
         secret_version=endpoint.secret_version,
@@ -698,11 +698,7 @@ async def export_dead_deliveries(
                     delivery.dead_reason,
                     delivery.attempt_count,
                     delivery.last_http_status,
-                    (
-                        delivery.dead_at.isoformat()
-                        if delivery.dead_at
-                        else ""
-                    ),
+                    (delivery.dead_at.isoformat() if delivery.dead_at else ""),
                 )
             )
         )

@@ -87,7 +87,9 @@ async def test_event_quota_returns_bounded_429_without_double_charging(
     event = {"type": "order.created", "payload": {"id": "1"}}
     first_headers = {"X-API-Key": key, "Idempotency-Key": "event-0001"}
     first = await client.post("/v1/events", headers=first_headers, json=event)
-    repeated = await client.post("/v1/events", headers=first_headers, json=event)
+    repeated = await client.post(
+        "/v1/events", headers=first_headers, json=event
+    )
     denied = await client.post(
         "/v1/events",
         headers={"X-API-Key": key, "Idempotency-Key": "event-0002"},
@@ -123,8 +125,7 @@ async def test_endpoint_and_fanout_quotas(
         "endpoints_per_project"
     )
     endpoint_url = (
-        f"/v1/projects/{project_id}/endpoints/"
-        f"{first.json()['public_id']}"
+        f"/v1/projects/{project_id}/endpoints/{first.json()['public_id']}"
     )
     deactivated = await client.patch(
         endpoint_url,
@@ -143,7 +144,9 @@ async def test_endpoint_and_fanout_quotas(
         tenant_endpoints_per_project=2,
         tenant_fanout_per_event=1,
     )
-    monkeypatch.setattr(factory_module, "get_settings", lambda: fanout_settings)
+    monkeypatch.setattr(
+        factory_module, "get_settings", lambda: fanout_settings
+    )
     fanout_project, key = await api_project_key(client, bearer)
     assert (
         await create_api_endpoint(client, bearer, fanout_project, "one")
@@ -225,7 +228,9 @@ async def test_retained_bytes_and_replay_rate_quotas(
         tenant_replay_burst=1,
         tenant_replay_rate_per_second=0.001,
     )
-    monkeypatch.setattr(factory_module, "get_settings", lambda: replay_settings)
+    monkeypatch.setattr(
+        factory_module, "get_settings", lambda: replay_settings
+    )
     project_id, replay_key = await api_project_key(client, bearer)
     endpoint = await create_api_endpoint(client, bearer, project_id, "replay")
     assert endpoint.status_code == 201
@@ -341,12 +346,8 @@ async def test_claiming_rotates_tenants_and_endpoints(
     sqlite_session_factory: async_sessionmaker[AsyncSession],
 ):
     del db_session
-    noisy_id, _ = await seed_queue(
-        sqlite_session_factory, "noisy", [6]
-    )
-    healthy_id, _ = await seed_queue(
-        sqlite_session_factory, "healthy", [6]
-    )
+    noisy_id, _ = await seed_queue(sqlite_session_factory, "noisy", [6])
+    healthy_id, _ = await seed_queue(sqlite_session_factory, "healthy", [6])
     async with httpx.AsyncClient() as client:
         service = DeliveryService(
             sqlite_session_factory, client, phase4_settings()
@@ -415,16 +416,14 @@ async def test_expired_processing_lease_counts_toward_oldest_due_age(
             delivery = await session.scalar(select(Delivery))
             assert delivery is not None
             delivery.status = "processing"
-            delivery.lease_expires_at = datetime.now(
-                timezone.utc
-            ) - timedelta(seconds=60)
-            delivery.next_attempt_at = datetime.now(
-                timezone.utc
-            ) + timedelta(hours=1)
+            delivery.lease_expires_at = datetime.now(timezone.utc) - timedelta(
+                seconds=60
+            )
+            delivery.next_attempt_at = datetime.now(timezone.utc) + timedelta(
+                hours=1
+            )
 
-    settings = phase4_settings(
-        global_oldest_due_admission_seconds=10.0
-    )
+    settings = phase4_settings(global_oldest_due_admission_seconds=10.0)
     async with sqlite_session_factory() as session:
         with pytest.raises(SaturationError) as raised:
             await AdmissionController(session, settings).admit_event(

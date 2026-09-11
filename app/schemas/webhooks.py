@@ -14,8 +14,6 @@ SignatureScheme = Literal["legacy", "standard"]
 Plan = Literal["free", "standard", "enterprise"]
 
 
-
-
 def default_api_key_scopes() -> list[ApiKeyScope]:
     return ["events:write"]
 
@@ -141,13 +139,9 @@ def validate_event_type_filters(filters: list[str]) -> list[str]:
     for entry in filters:
         candidate = entry.strip()
         if not 1 <= len(candidate) <= 150:
-            raise ValueError(
-                "each event type filter must be 1-150 characters"
-            )
+            raise ValueError("each event type filter must be 1-150 characters")
         if any(ch.isspace() for ch in candidate):
-            raise ValueError(
-                "event type filters cannot contain whitespace"
-            )
+            raise ValueError("event type filters cannot contain whitespace")
         stem = candidate[:-2] if candidate.endswith(".*") else candidate
         if "*" in stem or not stem:
             raise ValueError(
@@ -186,9 +180,10 @@ class EndpointUpdate(BaseModel):
         if not self.model_fields_set:
             raise ValueError("at least one field must be provided")
         for field_name in ("url", "is_active", "signature_scheme"):
-            if field_name in self.model_fields_set and getattr(
-                self, field_name
-            ) is None:
+            if (
+                field_name in self.model_fields_set
+                and getattr(self, field_name) is None
+            ):
                 raise ValueError(f"{field_name} cannot be null")
         if (
             "event_types" in self.model_fields_set
@@ -365,12 +360,8 @@ class DeliveryPurgeOut(BaseModel):
 class OrganizationPolicyUpdate(BaseModel):
     model_config = STRICT
     plan: Plan | None = None
-    payload_retention_days: int | None = Field(
-        default=None, ge=1, le=3_650
-    )
-    response_retention_days: int | None = Field(
-        default=None, ge=1, le=3_650
-    )
+    payload_retention_days: int | None = Field(default=None, ge=1, le=3_650)
+    response_retention_days: int | None = Field(default=None, ge=1, le=3_650)
 
     @model_validator(mode="after")
     def require_valid_change(self) -> "OrganizationPolicyUpdate":
