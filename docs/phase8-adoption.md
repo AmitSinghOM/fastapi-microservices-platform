@@ -14,16 +14,18 @@ Platform** and the `fastapi-microservices-platform` repository. Distribution
 `webhook_platform_sdk`, CLI `webhookctl`, and environment prefix
 `WEBHOOK_PLATFORM_`.
 
-The package has not yet been released to a package index. Install it from the
-repository while the release gate remains open:
+The package is published on PyPI as
+[`fastapi-microservices-platform-sdk`](https://pypi.org/project/fastapi-microservices-platform-sdk/):
 
 ```bash
-git clone <repository-url>
-cd fastapi-microservices-platform
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install ./sdk/python
+python -m pip install fastapi-microservices-platform-sdk
 ```
+
+Add the `[outbox]` extra for the SQLAlchemy transactional outbox relay. To
+develop against an unreleased checkout, use `python -m pip install ./sdk/python`
+from the repository root instead.
 
 ## Producer flow
 

@@ -6,8 +6,12 @@ transactional outbox, and `webhookctl`. Its Python import remains
 `webhook_platform_sdk`. Python 3.11+ is required.
 
 ```bash
-python -m pip install .
+python -m pip install fastapi-microservices-platform-sdk
 ```
+
+Releases are published to [PyPI](https://pypi.org/project/fastapi-microservices-platform-sdk/)
+from signed `sdk-v*` tags through trusted publishing. To work on the SDK
+itself, install from a checkout instead: `python -m pip install -e .`.
 
 ```python
 from webhook_platform_sdk import Producer

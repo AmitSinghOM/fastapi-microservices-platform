@@ -626,6 +626,79 @@ first same-name artifact and does not consider prior attempts of the current
 run; the sdist is not byte-reproducible across rebuilds (the wheel is);
 `workflow_dispatch` must be run from the tag, not `main`.
 
+**Planned fix-forward `sdk-v0.1.2` — release-pipeline hardening (after the
+`0.1.1` production release, never on the frozen candidate):**
+
+- [x] Restore step: enumerates every retained `<tag>-candidate` artifact
+      across all runs for the exact commit (API `head_sha` filter) **and**
+      earlier attempts of the current run, newest first, and restores the
+      first whose hashes the registry preflight accepts. Done 2026-09-12;
+      verified with a six-scenario harness against a fake `gh` (no
+      candidates, older run, own earlier attempt, two artifacts in one run
+      with the newer one stale, stale-only, expired-only).
+- [x] Never rebuild when a tag already has a retained candidate: if
+      candidates exist but none matches, the step emits `::error` naming the
+      candidates and exits 1. A run that restored its own earlier attempt's
+      artifact skips the retain upload (`upload-artifact` v6 fails on a
+      duplicate name).
+- [x] Reproducible sdist. Diagnosis (setuptools 84, `SOURCE_DATE_EPOCH`
+      exported): the wheel was already byte-identical; the sdist differed
+      only in metadata — wall-clock gzip header mtime, sub-second PAX float
+      mtimes on every member, and the builder's uid/gid/user/group — because
+      setuptools does not apply `SOURCE_DATE_EPOCH` to the tarball. Fix:
+      `scripts/normalize_sdist.py` rewrites the archive (mtime =
+      `SOURCE_DATE_EPOCH`, uid/gid 0, empty names, modes 0644/0755, sorted
+      USTAR members, gzip mtime 0) and replaces the file only after proving
+      the member set and contents are unchanged and the result is
+      idempotent. Three builds from two working copies hashed identically;
+      the normalized sdist passes `twine check` and installs. CI job
+      `sdk-reproducible-build` builds twice and requires equal hashes on
+      every push. Tests: `app/tests/test_normalize_sdist.py`.
+- [x] Retry-equality check: no longer needed — both distributions
+      reproduce, so full-manifest equality is the identity of a candidate.
+- [x] Runbook and release policy: retries are fresh dispatches from the tag,
+      never "Re-run failed jobs"; a burned TestPyPI version is superseded by
+      a fix-forward version, never re-uploaded; the stale-candidate error
+      state is described.
+- [x] License metadata: `license = "Apache-2.0"` with `license-files` under
+      `[project]` (PEP 639), legacy license classifier removed, build backend
+      pinned to `setuptools==84.0.0` (PEP 639 support begins at 77.0).
+      Verified 2026-09-12 by an isolated build: `Metadata-Version: 2.4`,
+      `License-Expression: Apache-2.0`, `License-File: LICENSE`, license
+      text no longer embedded in the metadata body, and the pipeline's
+      pinned `twine==6.0.1 check` passes both files. Takes effect on the
+      index at `0.1.2`.
+- [x] Workflow names: display names are now `SDK release 1/2 — TestPyPI
+      candidate` and `SDK release 2/2 — PyPI production (after
+      cooling-off)`; filenames are unchanged because the production
+      workflow and both trusted publishers reference them by filename (on
+      2026-09-11 the first "production" dispatch went to the TestPyPI
+      workflow; harmless, idempotent, but a trap).
+
+**Completion gate for `0.1.2` (open):** all items above are implemented and
+verified locally; the gate closes only on live evidence. Required: (1) the
+`sdk-reproducible-build` CI job is green on the candidate commit; (2) the
+`0.1.2` TestPyPI run publishes; (3) a deliberate second dispatch from the
+same tag restores the identical bytes from the first run, skips the build,
+and passes end to end without any manual artifact deletion. Record run IDs
+here.
+
+**Production release to PyPI (2026-09-11):** after the 24-hour cooling-off
+(TestPyPI upload 10:03 UTC 2026-09-10; production dispatch 19:03 UTC
+2026-09-11, 33 h later) the owner dispatched `python-sdk-release` from tag
+`sdk-v0.1.1`. Run `34636739009` passed every step: signed-tag/commit/CI/
+version verification, retrieval of the successful TestPyPI run's manifest,
+download of the cooled artifacts (no rebuild), hash inspection, clean-wheel
+install, trusted-publisher upload, and post-publication verification.
+`fastapi-microservices-platform-sdk 0.1.1` is live at
+https://pypi.org/project/fastapi-microservices-platform-sdk/ with both files
+byte-identical to TestPyPI (wheel and sdist SHA-256 match), neither yanked.
+**Phase 8 external gates are closed.** This satisfies the receiver-first
+migration prerequisite (ADR 0002) and the 4.0 default-flip entry criterion.
+The README, SDK README, and adoption guide now give the PyPI install path;
+the previous "installable from the repository" statements were accurate
+until this release and have been retired.
+
 ## Phase 9 — Production deployment guidance
 
 **Purpose:** provide a safe reference deployment for the first real users.

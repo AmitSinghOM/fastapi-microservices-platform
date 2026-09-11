@@ -97,8 +97,13 @@ its input (for example, `gh workflow run python-sdk-test-release.yml --ref
 sdk-v0.1.1 -f tag=sdk-v0.1.1`). Verify the workflow used the
 `testpypi` environment, built a clean checkout, passed import/CLI smoke checks,
 and retained the exact wheel, source archive, and `SHA256SUMS` as one GitHub
-artifact before publishing. On retry, it must restore those bytes rather than
-rebuild the source archive. Its preflight must accept only an absent, matching
+artifact before publishing. If a run fails after the candidate was retained,
+retry by dispatching the workflow again from the same tag; do not use "Re-run
+failed jobs", which cannot see prior attempts' environment. The new run
+restores the retained bytes from any earlier run or attempt whose hashes match
+TestPyPI and skips the build; if retained candidates exist but none matches,
+it stops with an error and the version must fix forward with a new tag (a
+burned TestPyPI version is superseded, never re-uploaded). Its preflight must accept only an absent, matching
 partial, or matching complete release; publication skips only preverified
 existing files; and bounded post-publication polling must prove exactly the expected wheel and source distribution exist
 with matching hashes and sizes and are not yanked. Record the workflow URL,

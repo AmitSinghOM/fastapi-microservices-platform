@@ -37,20 +37,27 @@ Container evidence, PyPI trusted publishing, protected deployment environments,
 and a mandatory cooling-off period. Independent approval is not currently
 guaranteed.
 
-The owner first dispatches `Publish Python SDK to TestPyPI` for a signed
+The owner first dispatches `SDK release 1/2 — TestPyPI candidate` (file `python-sdk-test-release.yml`) for a signed
 `sdk-vMAJOR.MINOR.PATCH` tag. The workflow verifies the tag, tagged version,
 `main` containment, and successful exact-commit CI; builds from a clean
-checkout; records and verifies SHA-256 hashes; retains the exact wheel, source
-archive, and manifest as one GitHub artifact; smoke-tests the installed wheel;
-and preflights TestPyPI before OIDC publication. A retry restores those original
-bytes instead of rebuilding the non-reproducible source archive. Existing files
-are skipped only after their names, hashes,
+checkout with `SOURCE_DATE_EPOCH` set to the commit time and normalizes the
+source archive so both distributions are byte-reproducible (CI proves this on
+every push by building twice and requiring identical hashes); records and
+verifies SHA-256 hashes; retains the exact wheel, source archive, and manifest
+as one GitHub artifact; smoke-tests the installed wheel; and preflights
+TestPyPI before OIDC publication. A retry is a fresh dispatch from the same
+tag, never "Re-run failed jobs". It first searches every earlier run and
+attempt for that tag and commit for retained candidates and restores the
+newest one whose hashes match the registry byte-for-byte. If candidates exist
+but none matches, the workflow stops with an error instead of rebuilding: the
+registry already holds different bytes and the version must fix forward.
+Existing files are skipped only after their names, hashes,
 sizes, yanked state, and URLs match; bounded post-publication polling requires
 the exact complete release. This makes retries repair a matching partial upload
 and reject conflicting registry state.
 
 Production dispatch is blocked until those TestPyPI artifacts have cooled for
-at least 24 hours. The production workflow repeats source and CI checks, selects
+at least 24 hours. The production workflow, `SDK release 2/2 — PyPI production (after cooling-off)` (file `python-sdk-release.yml`), repeats source and CI checks, selects
 a successful TestPyPI workflow run for the exact tag and commit, and retrieves
 its retained manifest. It downloads only expected non-yanked files from the
 official TestPyPI artifact host, verifies reported/downloaded sizes and

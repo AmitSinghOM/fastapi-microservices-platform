@@ -299,11 +299,13 @@ rotation rules, deletion workflow, and encryption/key-management guidance.
 
 A standalone Python package under `sdk/python` provides a synchronous producer,
 raw-byte receiver verification, a SQLAlchemy transactional outbox relay, and the
-`webhookctl` management CLI. It is currently installable from the repository;
-package-index publication remains pending the Phase 8 release gate.
+`webhookctl` management CLI. It is published on PyPI as
+[`fastapi-microservices-platform-sdk`](https://pypi.org/project/fastapi-microservices-platform-sdk/)
+through trusted publishing from a signed release tag; the import package is
+`webhook_platform_sdk`.
 
 ```bash
-python -m pip install './sdk/python[outbox]'
+python -m pip install 'fastapi-microservices-platform-sdk[outbox]'
 webhookctl auth login --email owner@example.com
 webhookctl organizations list
 webhookctl deliveries list --project <project-id>

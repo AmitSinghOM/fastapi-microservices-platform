@@ -1,4 +1,4 @@
-name: Publish Python SDK to TestPyPI
+name: "SDK release 1/2 — TestPyPI candidate"
 
 on:
   workflow_dispatch:
@@ -94,30 +94,46 @@ jobs:
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
           echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$RELEASE_COMMIT")" >> "$GITHUB_ENV"
-      - name: Restore an earlier identical release candidate when available
+      - name: Restore the retained release candidate when one exists
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Every earlier dispatch for this exact tag and commit, including
+          # earlier attempts of this very run, may hold a retained candidate.
+          # A candidate whose hashes match the registry (or an empty registry)
+          # is restored byte-for-byte. If candidates exist but none match, the
+          # release is in an unrecoverable state and must fix forward with a
+          # new version: rebuilding would only produce a second set of bytes
+          # that the registry will reject.
           RUNS=$(gh api --method GET \
             "repos/$GITHUB_REPOSITORY/actions/workflows/python-sdk-test-release.yml/runs" \
             -f "event=workflow_dispatch" \
+            -f "head_sha=$RELEASE_COMMIT" \
             -f "per_page=100")
           RUN_IDS=$(printf '%s' "$RUNS" | jq -r \
             --arg sha "$RELEASE_COMMIT" \
             --arg branch "$RELEASE_TAG" \
-            --argjson current "$GITHUB_RUN_ID" \
-            '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch and .id != $current)] | sort_by(.created_at) | reverse | .[].id')
+            '[.workflow_runs[] | select(.head_sha == $sha and .head_branch == $branch)] | sort_by(.created_at) | reverse | .[].id')
           ARTIFACT_NAME="${RELEASE_TAG}-candidate"
           STEM="fastapi_microservices_platform_sdk-${RELEASE_VERSION}"
+          CANDIDATES=""
           for RUN_ID in $RUN_IDS; do
-            ARTIFACTS=$(gh api \
-              "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts")
-            ARTIFACT_ID=$(printf '%s' "$ARTIFACTS" | jq -r \
-              --arg name "$ARTIFACT_NAME" \
-              '[.artifacts[] | select(.name == $name and .expired == false)] | first | .id // empty')
-            if [[ -z "$ARTIFACT_ID" ]]; then
-              continue
-            fi
+            ARTIFACT_IDS=$(gh api \
+              "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+              | jq -r --arg name "$ARTIFACT_NAME" \
+              '[.artifacts[] | select(.name == $name and .expired == false)] | sort_by(.created_at) | reverse | .[].id')
+            for ARTIFACT_ID in $ARTIFACT_IDS; do
+              CANDIDATES="$CANDIDATES $RUN_ID:$ARTIFACT_ID"
+            done
+          done
+          if [[ -z "${CANDIDATES// /}" ]]; then
+            echo "No retained candidate exists for $RELEASE_TAG; a fresh build will be made"
+            exit 0
+          fi
+          echo "Retained candidates (run:artifact):$CANDIDATES"
+          for CANDIDATE in $CANDIDATES; do
+            RUN_ID=${CANDIDATE%%:*}
+            ARTIFACT_ID=${CANDIDATE##*:}
             gh api \
               "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" \
               > "$RUNNER_TEMP/release-candidate.zip"
@@ -132,7 +148,7 @@ jobs:
               > "$CANDIDATE_DIR/dist/${STEM}.tar.gz" \
               || ! unzip -p "$RUNNER_TEMP/release-candidate.zip" SHA256SUMS \
               > "$CANDIDATE_DIR/SHA256SUMS"; then
-              echo "Candidate artifact from workflow run $RUN_ID is malformed"
+              echo "Candidate $CANDIDATE is malformed"
               continue
             fi
             if ! (
@@ -142,7 +158,7 @@ jobs:
             ) || ! cmp \
               "$CANDIDATE_DIR/SHA256SUMS" \
               "$CANDIDATE_DIR/CURRENT_SHA256SUMS"; then
-              echo "Candidate artifact from workflow run $RUN_ID is inconsistent"
+              echo "Candidate $CANDIDATE is internally inconsistent"
               continue
             fi
             rm "$CANDIDATE_DIR/CURRENT_SHA256SUMS"
@@ -153,16 +169,24 @@ jobs:
               mv "$CANDIDATE_DIR/dist" sdk/python/dist
               mv "$CANDIDATE_DIR/SHA256SUMS" sdk/python/SHA256SUMS
               echo "RESTORED_RELEASE_CANDIDATE=true" >> "$GITHUB_ENV"
-              echo "Restored matching candidate from workflow run $RUN_ID"
-              break
+              if [[ "$RUN_ID" == "$GITHUB_RUN_ID" ]]; then
+                echo "RESTORED_FROM_CURRENT_RUN=true" >> "$GITHUB_ENV"
+              fi
+              echo "Restored candidate $CANDIDATE byte-for-byte"
+              exit 0
             fi
-            echo "Candidate from workflow run $RUN_ID does not match registry state"
+            echo "Candidate $CANDIDATE does not match the registry"
           done
-      - name: Build and hash new distributions
+          echo "::error::Retained candidates exist for $RELEASE_TAG but none matches TestPyPI." \
+            "Do not rebuild. Either delete stale candidate artifacts that were never" \
+            "published, or fix forward with a new version. Candidates:$CANDIDATES" >&2
+          exit 1
+      - name: Build, normalize, and hash new distributions
         if: env.RESTORED_RELEASE_CANDIDATE != 'true'
         run: |
           python -m pip install build==1.2.2.post1
           python -m build sdk/python
+          python scripts/normalize_sdist.py sdk/python/dist/*.tar.gz
           (
             cd sdk/python/dist
             sha256sum -- *.whl *.tar.gz > ../SHA256SUMS
@@ -190,6 +214,10 @@ jobs:
             "from webhook_platform_sdk import AuthClient, Producer, verify_request"
           "$RUNNER_TEMP/sdk-smoke/bin/webhookctl" --help >/dev/null
       - name: Retain release candidate for retry recovery
+        # A re-run attempt that restored this run's own earlier candidate must
+        # not upload again: upload-artifact fails on a duplicate name, and the
+        # earlier artifact is already the retained copy.
+        if: env.RESTORED_FROM_CURRENT_RUN != 'true'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ inputs.tag }}-candidate

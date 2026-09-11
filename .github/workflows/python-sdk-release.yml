@@ -1,4 +1,4 @@
-name: Publish Python SDK
+name: "SDK release 2/2 — PyPI production (after cooling-off)"
 
 on:
   workflow_dispatch:

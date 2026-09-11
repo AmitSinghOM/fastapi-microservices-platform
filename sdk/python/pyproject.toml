@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==75.6.0", "wheel==0.45.1"]
+requires = ["setuptools==84.0.0", "wheel==0.45.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,12 +8,12 @@ version = "0.1.1"
 description = "Python SDK and CLI for FastAPI Microservices Platform event delivery"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {file = "LICENSE"}
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{name = "FastAPI Microservices Platform contributors"}]
 dependencies = ["httpx==0.28.1"]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: Apache Software License",
 ]
 
 [project.urls]
@@ -30,7 +30,6 @@ webhookctl = "webhook_platform_sdk.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-license-files = ["LICENSE"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
