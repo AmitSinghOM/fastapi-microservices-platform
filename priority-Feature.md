@@ -30,7 +30,7 @@ creatable via API/SDK/CLI but not via the portal.
 | Priority | Item | Why now | Effort / owner |
 | --- | --- | --- | --- |
 | P0 | Push the local commits | ✅ **Done 2026-09-09/10.** All work is on `origin/main`; nothing local-only remains. | Done. |
-| P1 | Signed release candidate → real PyPI | ✅ **Done 2026-09-11.** `fastapi-microservices-platform-sdk 0.1.1` is on [PyPI](https://pypi.org/project/fastapi-microservices-platform-sdk/), promoted byte-identical from the cooled TestPyPI artifacts of signed candidate `198ba60` (tag `sdk-v0.1.1`, production run `34636739009`). `0.1.0` was burned on TestPyPI by a verifier bug and superseded. Unblocks receiver-first migration (ADR 0002) and the 4.0 default-flip entry criterion. Pipeline hardening for `0.1.2` is planned in `action.md`. | Done. |
+| P1 | Signed release candidate → real PyPI | ✅ **Done; latest `0.1.2` on 2026-09-13.** `fastapi-microservices-platform-sdk` is on [PyPI](https://pypi.org/project/fastapi-microservices-platform-sdk/) (`0.1.1` 2026-09-11, `0.1.2` 2026-09-13), each promoted byte-identical from cooled TestPyPI artifacts of a signed tag. `0.1.2` closed the pipeline-hardening gate with live evidence: byte-reproducible wheel **and** sdist (independently rebuilt from the tag), hash-matched candidate restore proven on a real retry, no-rebuild guard, cooling-off enforced in code, PEP 639 license metadata. `0.1.0` was burned on TestPyPI and superseded. Unblocks receiver-first migration (ADR 0002) and the 4.0 default-flip entry criterion. | Done. |
 | P2 | Phase 8 scripted clean-machine gate | ✅ **Done 2026-09-08.** `scripts/phase8_clean_machine_gate.py` runs the full adoption flow unattended from a fresh clone + venv — install, auth, org/project/key/endpoint (`standard` scheme), signed event, worker delivery to `succeeded`, exactly-once receiver acceptance, CLI inspection. Two consecutive green runs (33.8 s / 31.9 s vs 1,800 s budget). Required a new dev-only `ALLOW_PRIVATE_WEBHOOKS` flag, which also fixed the quick start never completing locally. | Done; evidence in `action.md`. |
 | P3 | Adoption-friction docs | ✅ **Done 2026-09-08.** Standard Webhooks verification snippets (Python/JS/Go, APIs verified against the official library READMEs) in the adoption guide; static egress IP paragraph and outbox broker-ingest positioning in the README; portal endpoint form gained the `event_types` filter field. | Done. |
 | P4 | Phase 9 production deployment guidance | Required before real pilots; not started. | Multi-day docs + reference-deployment work. |
@@ -39,6 +39,10 @@ creatable via API/SDK/CLI but not via the portal.
 | Deferred | Feature work: white-label portal (#4), transformations (#5), broker ingest (#6), Helm (#8) | All wait for Phase 10 pilot evidence. Building Svix's flagship feature before having one design partner inverts the "measured bottlenecks first" rule. | Revisit after Phase 10 interviews/pilots. |
 
 ## P1 release phases (owner-only runbook)
+
+**Status: completed twice (`0.1.1` on 2026-09-11, `0.1.2` on 2026-09-13);
+retained as the reference procedure for every future `sdk-v*` release.**
+Evidence for each phase lives in `action.md`.
 
 Grounded in [the SDK release checklist](docs/sdk-release-checklist.md),
 [the external-gate runbook](docs/phase8-external-gates.md), and

@@ -67,8 +67,11 @@ breaking, quotas, fairness, retention, replay, OTel present in `app/`;
 RBAC as organization roles `owner/admin/member` and project roles
 `admin/operator/viewer` (`app/models.py`); clean-machine gate
 (`scripts/phase8_clean_machine_gate.py`, 31.9–33.8 s measured); PyPI
-release `0.1.1` verified live 2026-09-11. Public suite: 200 tests (168
-application incl. 11 PostgreSQL-marked, 32 SDK).
+releases `0.1.1` (2026-09-11) and `0.1.2` (2026-09-13) verified live, both
+byte-identical to their cooled TestPyPI artifacts and `0.1.2` independently
+rebuilt from the tag to identical hashes. Public suite: 208 tests (176
+application incl. 11 PostgreSQL-marked, 32 SDK); re-verify this number on
+launch day.
 
 ## r/selfhosted draft
 

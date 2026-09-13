@@ -675,13 +675,8 @@ run; the sdist is not byte-reproducible across rebuilds (the wheel is);
       2026-09-11 the first "production" dispatch went to the TestPyPI
       workflow; harmless, idempotent, but a trap).
 
-**Completion gate for `0.1.2` (open):** all items above are implemented and
-verified locally; the gate closes only on live evidence. Required: (1) the
-`sdk-reproducible-build` CI job is green on the candidate commit; (2) the
-`0.1.2` TestPyPI run publishes; (3) a deliberate second dispatch from the
-same tag restores the identical bytes from the first run, skips the build,
-and passes end to end without any manual artifact deletion. Record run IDs
-here.
+**Completion gate for `0.1.2`: ✅ CLOSED 2026-09-13.** Live evidence for all
+three requirements; run IDs below.
 
 Evidence so far (2026-09-12): candidate `0127481` (signed, Verified; also
 carries the repo-wide `ruff format` and its enforcement in `make lint` and
@@ -693,7 +688,40 @@ candidate, built and normalized, published, verified. TestPyPI now shows
 20,631 B (`745bb7c3…`), sdist 23,030 B (`168d838e…`). A clean local build of
 the tag on macOS (uid 503) with `normalize_sdist.py` reproduced **both**
 hashes exactly against the Ubuntu-runner-published files — the first time
-the source archive has been independently reproducible. (3) ⏳ pending.
+the source archive has been independently reproducible. (3) ✅ Retry path
+proven live (2026-09-13 08:03 UTC): a fresh dispatch of the TestPyPI
+workflow from the unchanged tag — run `34746721847` (#9, attempt 1) —
+restored the candidate retained by run #8 through the real GitHub API,
+**skipped the build step**, passed inspection and the clean-wheel install,
+retained its own copy (43,129 B, same as #8), and completed publish and
+verification with TestPyPI left byte-for-byte unchanged (same two files,
+same Friday upload timestamps). No manual artifact deletion was needed. The
+production lookup invariant (exactly one non-expired candidate on the
+latest successful TestPyPI run for the tag) still holds with #9 as that
+run. This is the scenario that burned `0.1.0`; it now completes as a
+no-op.
+
+**Cooling-off enforcement observed live (2026-09-11 20:37 UTC):** the
+production workflow was dispatched six minutes after the TestPyPI upload
+(run `34645215593`, attempt 1). `release_registry.py download
+--minimum-age-hours 24` refused with exit 2 and every later step was
+skipped; nothing reached PyPI. This is the first live proof that the 24-hour
+cooling-off is enforced in code rather than by procedure alone. The `pypi`
+environment wait timer did not hold the run, so the script is the effective
+gate.
+
+**Production release `0.1.2` (2026-09-13 06:56 UTC):** the same run was
+re-run (attempt 2) after 34 hours and passed every step: cooled-artifact
+download, hash inspection, clean-wheel install, trusted-publisher upload,
+and post-publication verification. `fastapi-microservices-platform-sdk
+0.1.2` is the latest version on PyPI; wheel `745bb7c3…` and sdist
+`168d838e…` are byte-identical to TestPyPI and neither is yanked; the index
+shows `license_expression: Apache-2.0` with no embedded license text.
+Process note: the retry used "Re-run failed jobs" rather than a fresh
+dispatch. For the production workflow this is safe because it holds no
+attempt-local state (its input is the retained TestPyPI artifact), but the
+runbook's fresh-dispatch rule stands for the TestPyPI workflow, where
+attempt-local candidates exist.
 
 **Production release to PyPI (2026-09-11):** after the 24-hour cooling-off
 (TestPyPI upload 10:03 UTC 2026-09-10; production dispatch 19:03 UTC
