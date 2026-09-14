@@ -14,16 +14,15 @@ today is **release and adoption, not features**.
 | --- | --- | --- | --- |
 | 1 | Event-type subscriptions + filtering | ✅ Done | Migration `0010`; exact + trailing `prefix.*` wildcards; filtered at acceptance before admission; SDK and `webhookctl` support. The review's #1 gap, closed. |
 | 2 | Standard Webhooks alignment | ✅ Phase one done | ADR 0002 accepted and implemented: opt-in per-endpoint `standard` scheme (migration `0011`), emission cross-verified by the official `standardwebhooks` library, auto-detecting SDK receiver. 4.0 default flip planned, gated on PyPI (see below). |
-| 3 | Multi-language verification SDKs | 🟡 Mooted, snippets missing | The `standard` scheme means any Standard Webhooks library (Python/JS/Go/Java/Ruby/PHP/Rust) verifies deliveries — no need to ship our own SDKs. Missing: short per-language verification snippets in the docs. |
+| 3 | Multi-language verification SDKs | ✅ Mooted and documented | The `standard` scheme means any Standard Webhooks library verifies deliveries; the adoption guide carries Python, JavaScript, and Go snippets (added 2026-09-09) and `docs/comparison.md` states the ecosystem position. No bespoke SDKs planned. |
 | 4 | White-label embeddable consumer portal | ❌ Not built (deferred) | Svix's flagship: magic-link scoped tokens so a SaaS's customers self-manage endpoints. Our portal is operator-facing. Largest remaining product gap; build only on Phase 10 pilot evidence. |
 | 5 | Payload transformations | ❌ Deliberately deferred | Conflicts with the immutable-envelope guarantee. If ever built: transform at dispatch, never mutate the accepted snapshot. |
 | 6 | Broker ingest sources (Kafka/SQS/RabbitMQ) | ❌ Deliberately not building | The SQLAlchemy transactional outbox relay is the answer for the target user. Missing: one positioning paragraph saying so explicitly. |
-| 7 | Static egress IP story | ❌ Doc gap only | The CONNECT proxy + NAT already provide it; no doc tells receivers they can firewall to the egress IPs. ~1 paragraph. |
+| 7 | Static egress IP story | ✅ Done 2026-09-09 | The README SSRF/egress section tells receivers they can allowlist the platform's egress IPs (CONNECT proxy + NAT). |
 | 8 | Kubernetes/Helm reference | ❌ Correctly deferred | Phase 9 item per the action plan's "Compose stays simple first" rule. |
 
-Known small inconsistency: the portal endpoint form has the
-`signature_scheme` select but no `event_types` field, so feature #1 is
-creatable via API/SDK/CLI but not via the portal.
+The portal endpoint form exposes both `signature_scheme` and `event_types`
+(the earlier inconsistency was fixed on 2026-09-09).
 
 ## Priority list (what the package needs now)
 

@@ -1,4 +1,7 @@
-.PHONY: install-dev lint typecheck test sdk-test migration-check check
+.PHONY: bootstrap install-dev lint typecheck test sdk-test migration-check check
+
+bootstrap:
+	python scripts/bootstrap_env.py
 
 install-dev:
 	python -m pip install -r requirements-dev.txt

@@ -1,19 +1,22 @@
 # FastAPI Microservices Platform
 
 [![CI](https://github.com/AmitSinghOM/fastapi-microservices-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/AmitSinghOM/fastapi-microservices-platform/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/fastapi-microservices-platform-sdk.svg)](https://pypi.org/project/fastapi-microservices-platform-sdk/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-**A self-hosted, PostgreSQL-native webhook delivery platform** — an
-open-source alternative to hosted webhook services in the spirit of Svix and
-Convoy, built for teams that want durable, multi-tenant event delivery
-without operating Redis or Kafka. PostgreSQL provides transactional state,
-delivery scheduling, fairness, retries, dead-letter operations, and lifecycle
-management. The repository includes a Python SDK, CLI, operational portal,
-and independently scalable API and worker runtimes.
+**Self-hosted webhook delivery on PostgreSQL alone — no Redis, no Kafka.**
+Standard Webhooks-compliant signatures, multi-tenant fairness, audited
+dead-letter replay, an SSRF-fenced egress path, and evidence-gated releases:
+a one-million-delivery zero-loss gate and [a benchmarks page that reports
+the target it missed](docs/benchmarks.md).
 
-Additional brokers are deliberately deferred until measured throughput,
-isolation, or retention requirements justify their operational cost. Existing
-JWT users and owned-item APIs remain available; webhook ingestion uses project
-API keys and organization membership is the management authorization boundary.
+An open-source (Apache-2.0) alternative to hosted webhook services in the
+spirit of Svix and self-hosted gateways in the spirit of Convoy, for teams
+that already run PostgreSQL and do not want a broker or cache just for
+webhooks. [Where it fits, and where it does not →](docs/comparison.md)
+
+**New here?** [Quick start](docs/quickstart.md) · [Operations contract](docs/operations.md) ·
+[Adoption guide and SDK](docs/phase8-adoption.md) · [Changelog](CHANGELOG.md)
 
 ## Architecture
 
@@ -32,36 +35,38 @@ responses.
 
 ## Quick start
 
-Python 3.11+:
+Three commands to a running platform, then a first verified delivery:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python scripts/bootstrap_env.py      # .env with the three shared secrets, filled once
+docker compose up --build             # PostgreSQL 17, migration, API :8000, egress proxy, worker
+open http://localhost:8000/portal     # built-in web UI: create a project, endpoint, and send an event
+```
+
+`bootstrap_env.py` is idempotent — re-running it never rotates keys. The
+Compose stack's egress proxy denies private address ranges by design, so
+point endpoints at a public URL or a tunnel; to deliver to a receiver on your
+own laptop, use the from-source path in
+[the quick start guide](docs/quickstart.md), which walks clone → signed,
+verified delivery with the bundled example receiver and `webhookctl`.
+
+<details>
+<summary>Run from source instead of Compose (Python 3.11+, SQLite)</summary>
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
-# Generate the three shared secrets — run ONCE. Without values in .env the
-# API and worker each invent their own key and signatures never verify;
-# re-running appends new values that silently rotate the keys and
-# invalidate previously issued endpoint secrets.
-python3 -c "import secrets; print('SECRET_KEY=%s' % secrets.token_urlsafe(32)); print('API_KEY_PEPPER=%s' % secrets.token_urlsafe(32)); print('WEBHOOK_SIGNING_KEY=%s' % secrets.token_urlsafe(32))" >> .env
-uvicorn app.main:app --reload
-# Separate terminal; never embed this in the API process:
+python scripts/bootstrap_env.py
+uvicorn app.main:app
+# second terminal — never embed the worker in the API process:
 python -m app.worker
 ```
 
-Then open **<http://localhost:8000/portal>** — the built-in web UI — to do
-the entire setup below without touching `curl`.
-
-Docker Compose starts PostgreSQL 17.2, runs the one-shot migration, waits for a
-healthy API, then starts the worker:
-
-```bash
-docker compose up --build
-```
-
-Compose defaults are explicitly development-only, not production secrets.
-Provide stable `SECRET_KEY`, `API_KEY_PEPPER`, `WEBHOOK_SIGNING_KEY`, and database
-credentials in every shared environment.
+Compose defaults are development-only. Provide stable `SECRET_KEY`,
+`API_KEY_PEPPER`, `WEBHOOK_SIGNING_KEY`, and database credentials in every
+shared environment; the API and worker must share them or signatures never
+verify.
+</details>
 
 ## Built-in web UI
 
@@ -341,6 +346,10 @@ The [built-in web UI](#built-in-web-ui) covers the same setup, test-event,
 inspection, and replay flow for operators who prefer a browser.
 
 See [the wire protocol](docs/wire-protocol.md),
+[quick start](docs/quickstart.md),
+[operations contract](docs/operations.md),
+[choosing a webhook delivery layer](docs/comparison.md),
+[changelog](CHANGELOG.md),
 [benchmarks and evidence](docs/benchmarks.md),
 [Phase 8 adoption guide](docs/phase8-adoption.md),
 [usability study protocol](docs/phase8-usability-study.md), and
