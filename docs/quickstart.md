@@ -134,6 +134,14 @@ no-op, and the receiver still has exactly one accepted event.
   migration job, the API on `:8000`, the egress proxy, and the worker.
   Provide the three secrets from step 1 as environment variables.
 
-<!-- Measured wall-clock time for this page, fresh clone to step 6, is
-recorded in action.md when measured; do not state a number here that has
-not been measured. -->
+## How long this takes
+
+Measured, not estimated: the scripted equivalent of this page
+(`python scripts/phase8_clean_machine_gate.py`, which performs every
+step above from a fresh clone and a fresh virtual environment, including
+dependency installation) completed in **35 seconds** wall clock on
+2026-09-14 at commit `0beffa2` (sum of instrumented steps 32.3 s; the
+installs dominate). A human following the page by hand will be slower
+than the script; budget five minutes for a first read-through. Re-run the
+gate yourself to get a number for your machine.
+

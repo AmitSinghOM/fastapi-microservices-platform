@@ -771,7 +771,32 @@ the correction is fix-forward: `9441248` (complete scheme feature, `legacy`
 default, `app_version` 3.0.0, `/items` on) is tagged **`v3.0.0`** as the
 last 3.x release, and the following commit makes `main` a consistent 4.0.0
 (`app_version` 4.0.0, `/items` off) and is tagged **`v4.0.0`**. `88efb11`
-is an intermediate commit on `main` with no tag and no release. The SDK is unaffected: the CLI help
+is an intermediate commit on `main` with no tag and no release. 
+
+**Evaluator-readiness pass (2026-09-14, commit `a040033`, CI green):** a
+pilot-readiness audit ranked eight gaps by first-contact impact and all but
+the repository rename (ADR 0003, rejected) were closed in one docs-only
+commit: README first screen with PyPI and license badges, one-line
+positioning, and a "New here?" row; a three-command quick start
+(`scripts/bootstrap_env.py` → `docker compose up --build` → portal) with
+the from-source path collapsed; `docs/quickstart.md` (one path from clone
+to a signed, verified delivery, every CLI flag taken from `--help`);
+`docs/operations.md` (guarantees, non-guarantees including the unmet
+queue-age SLO, capacity knobs from `app/config.py`, alerting on real metric
+names); `docs/comparison.md` (category-level comparison with an explicit
+"when not to choose this"); `CHANGELOG.md` tied to the real tags;
+`scripts/bootstrap_env.py` with seven tests (idempotent — the README
+one-liner it replaces rotated keys on re-run); and a tiered `.env.example`
+(same 100 keys and values, Required/Common/Advanced). Every relative link
+(57) verified; three stale `priority-Feature.md` rows corrected. Public
+suite: 220 tests (188 application, 32 SDK).
+**Clone-to-verified-delivery, measured:** the clean-machine gate on
+`0beffa2` completed in 35 s wall clock, 32.3 s across 13 instrumented steps
+(installs 14.5 s; API readiness 4.6 s; worker delivery 4.0 s), exit 0, with
+durable signed acceptance verified in the receiver. Recorded in
+`docs/quickstart.md`. The audit's definition of done is met on evidence
+except the still-deferred human read-through timing, which the quickstart
+states honestly as "budget five minutes".The SDK is unaffected: the CLI help
 text change rides along to `sdk-v0.1.3` whenever that is cut.
 
 ## Phase 9 — Production deployment guidance
