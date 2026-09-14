@@ -1,5 +1,42 @@
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
+
+from app.main import app
+from app.routers import items_router
+
+
+@pytest.fixture(autouse=True, scope="module")
+def mount_items_router():
+    """The tutorial `/items` API defaults off since 4.0 (release policy).
+
+    These tests cover the opt-in surface, so mount the router exactly as
+    `create_app` does when EXAMPLE_ITEMS_ENABLED=true.
+    """
+    already_mounted = any(
+        getattr(route, "path", "").startswith("/items") for route in app.routes
+    )
+    if not already_mounted:
+        app.include_router(items_router)
+    yield
+
+
+@pytest.mark.asyncio
+async def test_items_default_off_in_4_0():
+    """A freshly built 4.0 app must not expose `/items` unless opted in."""
+    from app.config import get_settings
+    from app.main import create_app
+
+    assert get_settings().example_items_enabled is False
+    fresh = create_app()
+    assert not any(
+        getattr(route, "path", "").startswith("/items")
+        for route in fresh.routes
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=fresh), base_url="http://test"
+    ) as client:
+        response = await client.get("/items/")
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

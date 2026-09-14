@@ -1321,7 +1321,7 @@ class WebhookService:
         url: str,
         description: str | None,
         event_types: list[str] | None = None,
-        signature_scheme: str = "legacy",
+        signature_scheme: str = "standard",
     ) -> tuple[WebhookEndpoint, str]:
         project = await authorize_project(
             self.db, user_id, project_id, Permission.ENDPOINT_MANAGE

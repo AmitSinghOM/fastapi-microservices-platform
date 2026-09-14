@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "FastAPI Webhook Platform"
-    app_version: str = "3.0.0"
+    app_version: str = "3.1.0"
     environment: Literal["development", "test", "staging", "production"] = (
         "development"
     )

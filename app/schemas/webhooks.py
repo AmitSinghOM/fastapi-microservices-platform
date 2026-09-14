@@ -158,7 +158,10 @@ class EndpointCreate(BaseModel):
     url: HttpUrl
     description: str | None = Field(default=None, max_length=500)
     event_types: list[str] | None = None
-    signature_scheme: SignatureScheme = "legacy"
+    # 4.0 (ADR 0002 phase two): new endpoints default to the Standard
+    # Webhooks scheme. Existing endpoints keep their stored scheme and
+    # accepted deliveries always sign per their acceptance-time snapshot.
+    signature_scheme: SignatureScheme = "standard"
 
     @model_validator(mode="after")
     def normalize_event_types(self) -> "EndpointCreate":

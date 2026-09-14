@@ -24,9 +24,9 @@ security and correctness permit. Never silently change webhook signature bytes,
 idempotency meaning, or delivery guarantees.
 
 The JWT `/users`, `/auth`, and tutorial `/items` APIs predate the webhook
-product. `/items` remains enabled by default in 3.x for compatibility and can be
-disabled with `EXAMPLE_ITEMS_ENABLED=false`. The default will become disabled
-in 4.0, with removal no earlier than 5.0.
+product. `/items` was enabled by default through 3.x; since 4.0 it defaults
+off and is re-enabled with `EXAMPLE_ITEMS_ENABLED=true`. Removal is no earlier
+than 5.0.
 
 ## Python SDK publication
 
@@ -95,9 +95,30 @@ instead of reproducing it.
 6. Roll application code forward to fix migration failures; do not improvise
    destructive downgrades against production data.
 
+### 4.0 upgrade notes
+
+4.0 changes two defaults and no stored data. There is no schema migration
+beyond those already applied in 3.x.
+
+- **New endpoints default to the `standard` signature scheme** (ADR 0002
+  phase two). Endpoints created before 4.0 keep their stored `legacy`
+  scheme, and every accepted or replayed delivery signs per its
+  acceptance-time snapshot, so no existing receiver sees different bytes.
+  Automation that creates endpoints and assumes the legacy header format
+  must either pass `signature_scheme: "legacy"` explicitly or upgrade the
+  receiver first (receiver-first migration: deploy a Standard Webhooks
+  verifier or SDK ≥ 0.1.0, then create or flip the endpoint).
+- **The tutorial `/items` API defaults off.** Set
+  `EXAMPLE_ITEMS_ENABLED=true` to keep it; it is removed no earlier than
+  5.0.
+
+Version 3.1.0 is the last 3.x release and contains the complete scheme
+feature with `legacy` as the default; operators who need more time can stay
+on it and opt endpoints into `standard` individually.
+
 ## Support and vulnerabilities
 
-Only the latest 3.x release receives security fixes. A security issue may
+Only the latest 4.x release receives security fixes. A security issue may
 accelerate deprecation or require an incompatible release. Advisories identify
 affected versions, mitigations, fixed versions, and upgrade instructions.
 Release support expands only after maintainers can sustain it.

@@ -133,12 +133,28 @@ NaN/infinity. It is the envelope:
 {"created_at":"<ISO-8601>","data":<event-payload>,"id":"<event-id>","type":"<event-type>"}
 ```
 
-For timestamp `T`, compute lowercase hex
-`HMAC-SHA256(endpoint_secret, ASCII(T) + b"." + exact_body_bytes)`. The header is
-exactly `Webhook-Signature: t=<T>,v1=<hex>`. Also sent are `Webhook-Id`,
-`Webhook-Timestamp`, `Webhook-Event`, and `Webhook-Attempt`. Parse the signature,
-reject stale timestamps according to receiver policy, compute over the raw body,
-and compare with a constant-time function before parsing JSON.
+Every delivery carries `Webhook-Id`, `Webhook-Timestamp`, `Webhook-Signature`,
+`Webhook-Event`, and `Webhook-Attempt`. Each endpoint has a signature scheme,
+snapshotted per delivery at acceptance so endpoint edits never change the
+bytes of accepted or replayed work:
+
+- **`standard` (default since 4.0)** is spec-exact
+  [Standard Webhooks](https://www.standardwebhooks.com/): the header is
+  `v1,<base64>` over `id.timestamp.body`, and the `whsec_…` secret pastes
+  into any Standard Webhooks library (Python, JS, Go, Java, Ruby, PHP, Rust)
+  with no custom code. Emission is cross-verified in CI by the official
+  `standardwebhooks` library.
+- **`legacy` (default before 4.0)** is `t=<T>,v1=<hex>` with lowercase hex
+  `HMAC-SHA256(endpoint_secret, ASCII(T) + b"." + exact_body_bytes)`. Parse
+  the header, reject stale timestamps according to receiver policy, compute
+  over the raw body, and compare with a constant-time function before parsing
+  JSON. Existing legacy endpoints keep working indefinitely.
+
+The Python SDK's `verify_request` auto-detects both schemes. Migration is
+receiver-first: upgrade the receiver's verifier, then switch the endpoint;
+the switch returns the standard-form secret once. Exact vectors for both
+schemes are in [the wire protocol](docs/wire-protocol.md) and the design in
+[ADR 0002](docs/adr/0002-standard-webhooks-alignment.md).
 
 ## Retries and worker safety
 
@@ -388,9 +404,9 @@ requirements, [SECURITY.md](SECURITY.md) for private vulnerability reporting,
 [the release policy](docs/release-policy.md) for versioning and upgrades.
 
 The inherited `/items` API is a tutorial compatibility surface rather than part
-of the webhook product. Set `EXAMPLE_ITEMS_ENABLED=false` to omit its routes.
-It remains enabled by default through 3.x, defaults off in 4.0, and will not be
-removed before 5.0.
+of the webhook product. It defaults off since 4.0; set
+`EXAMPLE_ITEMS_ENABLED=true` to keep its routes. It will not be removed before
+5.0.
 
 This project is available under the [Apache License 2.0](LICENSE). Community
 participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

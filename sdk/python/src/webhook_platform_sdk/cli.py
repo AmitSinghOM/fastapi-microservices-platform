@@ -90,7 +90,11 @@ def _parser() -> argparse.ArgumentParser:
         "--signature-scheme",
         choices=("legacy", "standard"),
         dest="signature_scheme",
-        help="wire signature scheme; 'standard' emits Standard Webhooks",
+        help=(
+            "wire signature scheme; omitted means the server default "
+            "('standard' since platform 4.0), 'legacy' keeps the pre-4.0 "
+            "t=...,v1=hex header for receivers not yet upgraded"
+        ),
     )
     endpoint_update = endpoint_commands.add_parser("update")
     _add_project_id(endpoint_update)

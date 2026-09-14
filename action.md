@@ -739,6 +739,35 @@ The README, SDK README, and adoption guide now give the PyPI install path;
 the previous "installable from the repository" statements were accurate
 until this release and have been retired.
 
+**ADR 0002 phase two — platform 4.0.0 (2026-09-14):** both entry criteria
+held (SDK on PyPI; the clean-machine gate is a real receiver verifying
+`standard` end-to-end), so the default flipped. `POST …/endpoints` without
+`signature_scheme` now creates a `standard` endpoint
+(`app/schemas/webhooks.py`, `WebhookService.create_endpoint`); the DB
+`server_default` stays `legacy` because it exists only to backfill rows that
+predate migration 0011, and the application always writes an explicit value.
+`ClaimedDelivery.signature_scheme` also keeps `legacy` as its fallback since
+it mirrors the snapshot, not the API default. The release policy's second
+4.0 commitment landed in the same major: `EXAMPLE_ITEMS_ENABLED` defaults to
+`false`. `app_version` is `4.0.0`. The portal preselects `standard`; the
+README signature section now leads with the Standard Webhooks scheme and
+describes `legacy` as the pre-4.0 format; the release policy gained "4.0
+upgrade notes" and now names the latest 4.x as the supported line. Tests:
+`test_4_0_new_endpoints_default_to_standard` proves a defaulted endpoint is
+`standard` with a 32-byte standard-form secret the official library
+accepts, while an explicitly legacy endpoint is listed as `legacy` and its
+next acceptance snapshots `legacy`; `test_4_0_schema_default_is_standard`
+locks the request model; `test_items_default_off_in_4_0` proves a fresh app
+exposes no `/items` route (the module's other tests mount the router
+explicitly). Gate: 168 application tests (11 PostgreSQL-marked deselected
+locally) and 32 SDK tests pass; lint, format, mypy, compileall clean.
+**Release sequencing:** no application tag has ever been created, and the
+policy requires deprecated behavior to survive one minor release, so the
+owner tags `v3.1.0` at the pre-flip commit `9441248` (the complete scheme
+feature with `legacy` as default, as the ADR's 3.x row specifies) before
+tagging `v4.0.0` at the flip commit. The SDK is unaffected: the CLI help
+text change rides along to `sdk-v0.1.3` whenever that is cut.
+
 ## Phase 9 — Production deployment guidance
 
 **Purpose:** provide a safe reference deployment for the first real users.

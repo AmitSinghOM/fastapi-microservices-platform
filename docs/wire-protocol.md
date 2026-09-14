@@ -64,7 +64,7 @@ Each endpoint selects one of two signature schemes (see
 snapshotted per delivery at acceptance, so endpoint edits never change the
 signature of accepted or replayed work.
 
-### `legacy` scheme (default)
+### `legacy` scheme (default for endpoints created before 4.0)
 
 The header is exactly `t=<seconds>,v1=<lowercase-hex>`. For timestamp `T`,
 body bytes `B`, and endpoint secret string `S`
@@ -82,7 +82,7 @@ bytes, and compare in constant time. It should also require
 `Webhook-Timestamp` to equal `t` and require signed body `id`/`type` fields
 to match `Webhook-Id`/`Webhook-Event`.
 
-### `standard` scheme (Standard Webhooks)
+### `standard` scheme (Standard Webhooks; default since 4.0)
 
 The header is `webhook-signature: v1,<base64>` per the
 [Standard Webhooks specification](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md);

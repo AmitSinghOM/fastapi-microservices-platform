@@ -1,13 +1,20 @@
 # ADR 0002: Standard Webhooks alignment as a versioned wire change
 
-- Status: Accepted; phase one (3.x) implemented on 2026-09-08. All five
+- Status: Accepted; phase one (3.x) implemented on 2026-09-08; **phase two
+  (4.0 default flip) implemented on 2026-09-14.** All five phase-one
   acceptance gates hold: golden vectors and the official `standardwebhooks`
   cross-verification live in `app/tests/test_signature_scheme.py`, legacy
   emission is regression-locked, the SDK receiver auto-detects both schemes
   and ignores unknown tokens (`sdk/python/tests/test_receiver_schemes.py`),
   and the threat model records the scheme-downgrade threat and invariants.
-  The 4.0 default change for new endpoints and the 5.0 legacy refusal
-  remain open per the version staging table.
+  Phase two's entry criterion — the auto-detecting SDK receiver installable
+  from PyPI — was met by `fastapi-microservices-platform-sdk` 0.1.1
+  (2026-09-11). In 4.0, `POST …/endpoints` without `signature_scheme`
+  creates a `standard` endpoint; stored schemes and delivery snapshots are
+  untouched; the portal preselects `standard`; regression tests
+  `test_4_0_new_endpoints_default_to_standard` and
+  `test_4_0_schema_default_is_standard` lock the behavior. The 5.0 legacy
+  refusal remains open per the version staging table.
 - Date: 2026-09-08 (proposed and phase one implemented)
 - Decision owner: repository owner
 - Reference: [Standard Webhooks specification](https://github.com/standard-webhooks/standard-webhooks/blob/main/spec/standard-webhooks.md)

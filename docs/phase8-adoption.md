@@ -104,7 +104,7 @@ err = wh.Verify(rawBody, headers)
 
 Java, Ruby, PHP, Rust, C#, and Elixir libraries exist in the same
 repository with equivalent `verify(payload, headers)` shapes. Endpoints on
-the default `legacy` scheme must instead follow the manual rules in
+the `legacy` scheme (the default before 4.0) must instead follow the manual rules in
 [the wire protocol](wire-protocol.md) or use this SDK's `verify_request`,
 which auto-detects both schemes.
 

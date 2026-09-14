@@ -116,7 +116,10 @@ async def test_api_scheme_lifecycle_and_snapshots(
     _, bearer = auth
     project_id, key = await api_project_key(client, bearer)
 
-    legacy = await _create_endpoint(client, bearer, project_id)
+    # Since 4.0 the default is `standard`; legacy must be requested.
+    legacy = await _create_endpoint(
+        client, bearer, project_id, scheme="legacy"
+    )
     assert legacy["signature_scheme"] == "legacy"
     assert (
         "_" in legacy["signing_secret"]
@@ -175,6 +178,75 @@ async def test_api_scheme_lifecycle_and_snapshots(
         for row in await db_session.scalars(select(Delivery))
     }
     assert unchanged[legacy["public_id"]] == "legacy"
+
+
+@pytest.mark.asyncio
+async def test_4_0_new_endpoints_default_to_standard(
+    client,
+    auth,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """ADR 0002 phase two: an unspecified scheme means `standard` in 4.0.
+
+    The default flip must be exactly that — a default. Existing legacy
+    endpoints are untouched by the release and keep signing legacy for
+    every future acceptance; nothing migrates automatically.
+    """
+    monkeypatch.setattr(webhook_module, "validate_webhook_url", allow_target)
+    _, bearer = auth
+    project_id, key = await api_project_key(client, bearer)
+
+    # An endpoint that predates 4.0 (created explicitly as legacy stands in
+    # for a stored `legacy` row).
+    pre_existing = await _create_endpoint(
+        client, bearer, project_id, scheme="legacy"
+    )
+    # A 4.0 endpoint created without naming a scheme.
+    defaulted = await _create_endpoint(client, bearer, project_id)
+
+    assert defaulted["signature_scheme"] == "standard"
+    digest = base64.b64decode(
+        defaulted["signing_secret"].removeprefix("whsec_")
+    )
+    assert len(digest) == 32, "default secret must be standard-form"
+    verifier = Webhook(defaulted["signing_secret"])
+    assert verifier is not None
+
+    listed = await client.get(
+        f"/v1/projects/{project_id}/endpoints", headers=bearer
+    )
+    assert listed.status_code == 200, listed.text
+    by_id = {
+        row["public_id"]: row["signature_scheme"] for row in listed.json()
+    }
+    assert by_id[pre_existing["public_id"]] == "legacy"
+    assert by_id[defaulted["public_id"]] == "standard"
+
+    accepted = await client.post(
+        "/v1/events",
+        headers={"X-API-Key": key, "Idempotency-Key": "scheme-4-0-0001"},
+        json={"type": "order.created", "payload": {"n": 1}},
+    )
+    assert accepted.status_code == 202, accepted.text
+    snapshots = {
+        row.endpoint_public_id_snapshot: row.signature_scheme_snapshot
+        for row in await db_session.scalars(select(Delivery))
+    }
+    assert snapshots[pre_existing["public_id"]] == "legacy"
+    assert snapshots[defaulted["public_id"]] == "standard"
+
+
+def test_4_0_schema_default_is_standard():
+    """The request model itself carries the 4.0 default."""
+    from app.schemas.webhooks import EndpointCreate
+
+    parsed = EndpointCreate(url="https://receiver.example/hook")
+    assert parsed.signature_scheme == "standard"
+    explicit = EndpointCreate(
+        url="https://receiver.example/hook", signature_scheme="legacy"
+    )
+    assert explicit.signature_scheme == "legacy"
 
 
 @pytest.mark.asyncio

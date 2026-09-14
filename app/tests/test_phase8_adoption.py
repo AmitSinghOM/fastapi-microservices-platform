@@ -141,8 +141,9 @@ async def test_portal_exposes_signature_scheme(client: AsyncClient):
     script = await client.get("/portal/app.js")
 
     assert 'name="signature_scheme"' in page.text
-    assert '<option value="legacy" selected>' in page.text
-    assert '<option value="standard">' in page.text
+    # 4.0: the portal preselects the Standard Webhooks scheme (ADR 0002).
+    assert '<option value="standard" selected>' in page.text
+    assert '<option value="legacy">' in page.text
     assert "signature_scheme" in script.text
 
 

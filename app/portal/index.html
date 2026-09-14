@@ -83,14 +83,16 @@
           </label>
           <label>Signature scheme
             <select name="signature_scheme">
-              <option value="legacy" selected>legacy (t=…,v1=hex)</option>
-              <option value="standard">standard (Standard Webhooks)</option>
+              <option value="standard" selected>standard (Standard Webhooks, recommended)</option>
+              <option value="legacy">legacy (t=…,v1=hex; for receivers not yet upgraded)</option>
             </select>
           </label>
           <p class="hint">
-            standard works with any Standard Webhooks library; the one-time
-            secret below matches the chosen scheme. Event types accept exact
-            names and trailing "prefix.*" wildcards, comma-separated.
+            standard is the default since 4.0 and works with any Standard
+            Webhooks library; choose legacy only for a receiver that still
+            verifies the pre-4.0 header format. The one-time secret below
+            matches the chosen scheme. Event types accept exact names and
+            trailing "prefix.*" wildcards, comma-separated.
           </p>
           <button>Create endpoint</button>
         </form>
