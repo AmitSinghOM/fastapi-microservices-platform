@@ -761,11 +761,17 @@ locks the request model; `test_items_default_off_in_4_0` proves a fresh app
 exposes no `/items` route (the module's other tests mount the router
 explicitly). Gate: 168 application tests (11 PostgreSQL-marked deselected
 locally) and 32 SDK tests pass; lint, format, mypy, compileall clean.
-**Release sequencing:** no application tag has ever been created, and the
-policy requires deprecated behavior to survive one minor release, so the
-owner tags `v3.1.0` at the pre-flip commit `9441248` (the complete scheme
-feature with `legacy` as default, as the ADR's 3.x row specifies) before
-tagging `v4.0.0` at the flip commit. The SDK is unaffected: the CLI help
+**Release sequencing (as it actually happened):** no application tag had
+ever been created. The plan was a version-only commit tagged `v3.1.0` before
+the flip, but the owner's commit `88efb11` (subject "3.1.0") carried the
+entire 4.0 change set with `app_version` 3.1.0 and `/items` still enabled —
+an inconsistent state that fails `test_items_default_off_in_4_0` and
+`test_env_example`. It was never tagged. Pushed history is immutable, so
+the correction is fix-forward: `9441248` (complete scheme feature, `legacy`
+default, `app_version` 3.0.0, `/items` on) is tagged **`v3.0.0`** as the
+last 3.x release, and the following commit makes `main` a consistent 4.0.0
+(`app_version` 4.0.0, `/items` off) and is tagged **`v4.0.0`**. `88efb11`
+is an intermediate commit on `main` with no tag and no release. The SDK is unaffected: the CLI help
 text change rides along to `sdk-v0.1.3` whenever that is cut.
 
 ## Phase 9 — Production deployment guidance

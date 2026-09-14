@@ -112,8 +112,8 @@ beyond those already applied in 3.x.
   `EXAMPLE_ITEMS_ENABLED=true` to keep it; it is removed no earlier than
   5.0.
 
-Version 3.1.0 is the last 3.x release and contains the complete scheme
-feature with `legacy` as the default; operators who need more time can stay
+Version 3.0.0 (the first tagged release) is the last 3.x release and contains
+the complete scheme feature with `legacy` as the default; operators who need more time can stay
 on it and opt endpoints into `standard` individually.
 
 ## Support and vulnerabilities

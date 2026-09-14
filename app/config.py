@@ -19,14 +19,17 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "FastAPI Webhook Platform"
-    app_version: str = "3.1.0"
+    app_version: str = "4.0.0"
     environment: Literal["development", "test", "staging", "production"] = (
         "development"
     )
     debug: bool = False
     docs_enabled: bool = True
     portal_enabled: bool = True
-    example_items_enabled: bool = True
+    # 4.0: the inherited tutorial `/items` API defaults off (release policy);
+    # set EXAMPLE_ITEMS_ENABLED=true to keep it until its removal (not before
+    # 5.0).
+    example_items_enabled: bool = False
     database_url: str = "sqlite+aiosqlite:///./app.db"
     auto_create_schema: bool = True
     database_health_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
