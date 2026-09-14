@@ -69,7 +69,7 @@ RBAC as organization roles `owner/admin/member` and project roles
 (`scripts/phase8_clean_machine_gate.py`, 31.9–33.8 s measured); PyPI
 releases `0.1.1` (2026-09-11) and `0.1.2` (2026-09-13) verified live, both
 byte-identical to their cooled TestPyPI artifacts and `0.1.2` independently
-rebuilt from the tag to identical hashes. Public suite: 208 tests (176
+rebuilt from the tag to identical hashes. Public suite: 220 tests (188
 application incl. 11 PostgreSQL-marked, 32 SDK); re-verify this number on
 launch day.
 
