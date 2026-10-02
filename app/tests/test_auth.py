@@ -109,7 +109,9 @@ def test_token_signed_with_another_key_is_rejected():
     from app.security import ALGORITHM, decode_access_token
 
     forged = jwt.encode(
-        {"sub": "1", "exp": 9999999999}, "attacker-key", algorithm=ALGORITHM
+        {"sub": "1", "exp": 9999999999},
+        "attacker-key-with-at-least-32-bytes",
+        algorithm=ALGORITHM,
     )
 
     with pytest.raises(jwt.InvalidTokenError):

@@ -28,6 +28,30 @@ pytest app/tests -q
 The fixture creates a random schema and never drops the database or `public`
 schema. Never point tests or benchmarks at production.
 
+## Dependencies
+
+`requirements.txt` holds the direct runtime pins; `requirements-dev.txt` adds
+test and lint tools. The container installs `requirements-deploy.txt`, the
+hash-locked Linux / Python 3.11 resolution of `requirements.txt`, with
+`--require-hashes`. After changing a runtime pin, regenerate and commit the
+lock (generated with [uv](https://docs.astral.sh/uv/) 0.11.14):
+
+```bash
+make lock                                      # reuses existing pins
+make lock LOCK_ARGS="--upgrade-package NAME"   # move one transitive pin
+make lock-check                                # validates direct pins and hash format
+```
+
+The offline checker validates direct-version drift and lock syntax, not that
+every transitive dependency is present. CI and the container install the lock
+and check compatibility. Review transitive changes and artifact hashes when
+regenerating; a lock is not an advisory audit.
+
+Held on purpose, each needing its own tested change: `bcrypt` above 4.0.x and
+`passlib` (a password-hash migration), the Python image's minor version, and
+SQLAlchemy 2.1. The SDK's dependencies are its published contract; change
+them only with an SDK release.
+
 ## Change workflow
 
 1. Open or reference an issue for significant behavior changes.

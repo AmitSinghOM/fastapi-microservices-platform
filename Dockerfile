@@ -11,9 +11,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install dependencies as root, before dropping privileges.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies as root, before dropping privileges. Every package
+# comes from the hash-locked resolution, never a fresh resolve. The second
+# install is offline: it fails the build if requirements-deploy.txt no longer
+# satisfies the direct pins in requirements.txt (run `make lock`).
+COPY requirements.txt requirements-deploy.txt ./
+RUN pip install --no-cache-dir --require-hashes --no-deps \
+        -r requirements-deploy.txt \
+    && pip install --no-cache-dir --no-index --no-deps -r requirements.txt \
+    && pip check
 
 # Copy application and versioned migration assets.
 COPY app/ ./app/

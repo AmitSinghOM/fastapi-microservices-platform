@@ -56,19 +56,58 @@ nonstandard ports, proxy settings, redirect refusal, proxy-deny classification,
 and secret-free low-cardinality audit events.
 
 The GitHub container workflow runs the black-box override in
-`tests/egress/docker-compose.test.yml`. Its controlled DNS responder provides
-private, metadata, CNAME-to-private, mixed public/private, split-view, and
-public-first/private-second responses. The probe bypasses application URL
-validation and verifies all of the following:
+`tests/egress/docker-compose.test.yml`. The harness is hermetic: it contacts
+no real host or resolver. Every network in the test topology, including the
+proxy's `outbound` network, is Docker-internal. The controlled DNS responder
+is authoritative for a fixed set of `.test` names and answers anything else
+with NXDOMAIN instead of forwarding. It provides private, metadata,
+CNAME-to-private, mixed public/private, split-view, and
+public-first/private-second responses.
 
-1. A direct worker socket cannot reach a public TLS endpoint.
+The "public" target is a local TLS receiver at `11.200.0.10` on the internal
+`simulated-public` network. That address is globally routable space, so it
+falls outside every production deny rule and the production Squid ACLs run
+unchanged; the test override only points Squid at the controlled resolver.
+Because the network is internal, those addresses are shadowed only inside the
+Compose project and traffic cannot leave the Docker host. Each run creates a
+throwaway CA and receiver certificate with `tests/egress/tls_fixture.py`
+(OpenSSL CLI, one-day validity, CA key deleted after signing, nothing
+committed). The probe trusts only that CA, and the receiver echoes the SNI it
+observed.
+
+The probe bypasses application URL validation and verifies all of the
+following:
+
+1. A direct worker socket to the simulated public receiver's numeric address
+   fails; the probe has the production worker's network attachments.
 2. Raw private, alternate, mapped, metadata, CNAME, mixed, and rebound CONNECT
-   targets receive proxy `403` responses.
+   targets receive proxy `403` responses. An unresolvable name is refused
+   with `403` or `503` and never opens a tunnel.
 3. Non-443 CONNECT and non-CONNECT methods are denied.
-4. A valid public 443 target completes end-to-end TLS with correct SNI.
+4. The public 443 receiver completes end-to-end TLS through the tunnel, and
+   the receiver reports the requested SNI.
 5. A mismatched TLS hostname fails certificate verification.
-6. Ambient proxy variables and `NO_PROXY=*` do not create a bypass.
+6. The shipped worker client (`app.worker.create_http_client`), run with
+   hostile `HTTPS_PROXY`, `NO_PROXY=*`, and `SSL_CERT_FILE` set to the harness
+   CA, is denied for a private target and rejects the receiver certificate,
+   proving it uses the pinned proxy and ignores ambient trust settings.
 7. An injected destination secret does not appear in any container log.
+
+`tests/egress/test_harness.py` checks the harness itself without Docker: the
+resolver never forwards, the simulated address is public yet outside the
+production deny list, every harness network is internal, the test Squid file
+contains no access rules, and the TLS fixture verifies and reports SNI.
+
+Run locally on a disposable Docker host:
+
+```bash
+export PHASE3_TLS_FIXTURE_DIR="$(mktemp -d)"
+python tests/egress/tls_fixture.py "$PHASE3_TLS_FIXTURE_DIR"
+docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml \
+  up --build --abort-on-container-exit --exit-code-from egress-probe egress-probe
+docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml \
+  down --volumes --remove-orphans
+```
 
 ## Operator requirements
 

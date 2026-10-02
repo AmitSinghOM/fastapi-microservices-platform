@@ -1,13 +1,14 @@
-fastapi==0.115.6
+fastapi==0.142.2
+# Explicit: fastapi no longer caps starlette, and starlette carries the
+# HTTP-layer advisories (fixes through 1.3.1).
+starlette==1.7.0
 uvicorn[standard]==0.34.0
 pydantic[email]==2.10.4
 pydantic-settings==2.7.1
 sqlalchemy[asyncio]==2.0.36
 aiosqlite==0.20.0
 httpx==0.28.1
-pytest==8.3.4
-pytest-asyncio==0.25.0
-python-multipart==0.0.20
+python-multipart==0.0.32
 
 # Password hashing: bcrypt via passlib, replacing unsalted SHA-256.
 # bcrypt is pinned below 4.1 because passlib 1.7.4 reads bcrypt.__about__,
@@ -16,7 +17,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 
 # Access tokens
-PyJWT==2.10.1
+PyJWT==2.15.1
 
 # Versioned migrations and production PostgreSQL async driver
 alembic==1.14.0

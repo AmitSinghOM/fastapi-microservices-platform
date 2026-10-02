@@ -37,13 +37,8 @@ def rotate_after(values: list[int], cursor: int | None) -> list[int]:
     return values
 
 
-async def fair_candidate_ids(
-    session: AsyncSession,
-    now: datetime,
-    scan_limit: int,
-    per_tenant_limit: int,
-) -> list[int]:
-    due = or_(
+def due_delivery_filter(now: datetime):
+    return or_(
         and_(
             Delivery.status.in_(("pending", "retry_scheduled")),
             Delivery.next_attempt_at <= now,
@@ -53,6 +48,14 @@ async def fair_candidate_ids(
             Delivery.lease_expires_at <= now,
         ),
     )
+
+
+async def fair_candidate_ids(
+    session: AsyncSession,
+    now: datetime,
+    scan_limit: int,
+    per_tenant_limit: int,
+) -> list[int]:
     endpoint_rank = func.row_number().over(
         partition_by=(Delivery.organization_id, Delivery.endpoint_id),
         order_by=(Delivery.next_attempt_at, Delivery.id),
@@ -65,7 +68,7 @@ async def fair_candidate_ids(
             Delivery.next_attempt_at.label("next_attempt_at"),
             endpoint_rank.label("endpoint_rank"),
         )
-        .where(due)
+        .where(due_delivery_filter(now))
         .cte("due_by_endpoint")
     )
     tenant_rank = func.row_number().over(
@@ -136,7 +139,7 @@ async def select_fair_deliveries(
         await session.scalars(
             select(Delivery)
             .options(joinedload(Delivery.event))
-            .where(Delivery.id.in_(candidate_ids))
+            .where(Delivery.id.in_(candidate_ids), due_delivery_filter(now))
             .with_for_update(of=Delivery, skip_locked=True)
         )
     )

@@ -1,36 +1,99 @@
+# Hermetic Phase 3 harness. Every network in this topology is internal, so
+# nothing can reach a real host or resolver. The "public" receiver sits on
+# simulated-public, whose globally routable test subnet is outside every
+# production deny rule; the production Squid ACLs are used unchanged.
+#
+# PHASE3_TLS_FIXTURE_DIR must point at output from tests/egress/tls_fixture.py.
+
+x-harness-container: &harness-container
+  build: .
+  read_only: true
+  cap_drop: [ALL]
+  cap_add: [NET_BIND_SERVICE]
+  security_opt:
+    - no-new-privileges:true
+
 services:
   egress-proxy:
     volumes:
       - ./tests/egress/squid.test.conf:/etc/squid/webhook-conf.d/default.conf:ro
     depends_on:
       egress-dns:
-        condition: service_started
+        condition: service_healthy
+    networks:
+      simulated-public:
+        ipv4_address: 11.200.0.2
 
   egress-dns:
-    build: .
+    <<: *harness-container
     command: ["python", "scripts/phase3_dns_server.py"]
-    cap_add: [NET_BIND_SERVICE]
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
+    healthcheck:
+      # Any answer, including NXDOMAIN for this unknown name, proves liveness.
+      test:
+        ["CMD", "python", "-c", "import socket; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(1); s.sendto(bytes.fromhex('000701000001000000000000047465737400' '00010001'), ('127.0.0.1', 53)); s.recv(512)"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
     networks:
       outbound:
         ipv4_address: 172.29.0.53
       worker-proxy:
         ipv4_address: 172.28.0.53
 
+  egress-receiver:
+    <<: *harness-container
+    command: ["python", "/harness/tls_receiver.py", "/fixture"]
+    volumes:
+      - ./tests/egress/tls_receiver.py:/harness/tls_receiver.py:ro
+      - ${PHASE3_TLS_FIXTURE_DIR:?run tests/egress/tls_fixture.py first}:/fixture:ro
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 443), timeout=1).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    networks:
+      simulated-public:
+        ipv4_address: 11.200.0.10
+
   egress-probe:
     build: .
     command: ["python", "scripts/verify_egress_boundary.py"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     environment:
+      PYTHONPATH: /app
+      # Hostile ambient settings that the shipped worker client must ignore.
       HTTP_PROXY: http://untrusted.invalid:9999
       HTTPS_PROXY: http://untrusted.invalid:9999
       NO_PROXY: "*"
+      SSL_CERT_FILE: /fixture/ca.pem
+      PHASE3_FIXTURE_CA: /fixture/ca.pem
+    volumes:
+      - ./tests/egress/worker_client_smoke.py:/harness/worker_client_smoke.py:ro
+      - ${PHASE3_TLS_FIXTURE_DIR:?run tests/egress/tls_fixture.py first}:/fixture:ro
     depends_on:
       egress-proxy:
         condition: service_healthy
       egress-dns:
-        condition: service_started
+        condition: service_healthy
+      egress-receiver:
+        condition: service_healthy
     networks:
+      # Same attachments as the production worker.
+      backend: {}
       worker-proxy:
         ipv4_address: 172.28.0.54
+
+networks:
+  outbound:
+    internal: true
+  simulated-public:
+    internal: true
+    ipam:
+      config:
+        # Globally routable space (is_global), deliberately outside the
+        # production deny list. Internal-only: no route leaves the host.
+        - subnet: 11.200.0.0/24

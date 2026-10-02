@@ -12,6 +12,7 @@ from app.models import (
     Delivery,
     DeliveryAttempt,
     Event,
+    EndpointSigningSecretVersion,
     Organization,
     Project,
     WebhookEndpoint,
@@ -84,6 +85,11 @@ async def seed_delivery(
             )
             session.add_all((endpoint, event))
             await session.flush()
+            session.add(
+                EndpointSigningSecretVersion(
+                    endpoint_id=endpoint.id, version=1, activated_at=created_at
+                )
+            )
             event.canonical_envelope = canonical_json(
                 {
                     "id": event.public_id,

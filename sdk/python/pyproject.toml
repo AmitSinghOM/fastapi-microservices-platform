@@ -23,7 +23,7 @@ Issues = "https://github.com/AmitSinghOM/fastapi-microservices-platform/issues"
 
 [project.optional-dependencies]
 outbox = ["SQLAlchemy==2.0.36"]
-test = ["pytest==8.3.4", "SQLAlchemy==2.0.36"]
+test = ["pytest==9.1.1", "SQLAlchemy==2.0.36"]
 
 [project.scripts]
 webhookctl = "webhook_platform_sdk.cli:main"

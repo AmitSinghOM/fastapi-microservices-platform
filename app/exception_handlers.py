@@ -110,7 +110,7 @@ async def validation_exception_handler(
     ]
     logger.warning("Request validation failed with %d errors", len(errors))
     return create_error_response(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         code="VALIDATION_ERROR",
         message="Request validation failed",
         details={"errors": errors},

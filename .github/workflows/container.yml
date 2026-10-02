@@ -4,16 +4,17 @@ on:
   push:
     branches: [main]
     paths: &container-paths
+      # Everything copied into the image or mounted by the harness. Any app
+      # module can change worker egress (validation, client, delivery), so
+      # narrower per-file filters silently skip the network-layer proof.
       - ".github/workflows/container.yml"
       - "Dockerfile"
       - ".dockerignore"
       - "docker-compose.yml"
-      - "deploy/egress-proxy/**"
+      - "deploy/**"
       - "tests/egress/**"
-      - "scripts/phase3_*.py"
-      - "scripts/verify_egress_boundary.py"
-      - "app/config.py"
-      - "app/worker.py"
+      - "app/**"
+      - "scripts/**"
       - "requirements*.txt"
       - "alembic.ini"
       - "migrations/**"
@@ -32,18 +33,22 @@ jobs:
   build-and-egress:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      PHASE3_TLS_FIXTURE_DIR: ${{ runner.temp }}/phase3-tls
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Create throwaway TLS fixture
+        run: python3 tests/egress/tls_fixture.py "$PHASE3_TLS_FIXTURE_DIR"
       - name: Validate Compose topology
         run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml config --quiet
       - name: Build images without publishing
-        run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml build egress-proxy egress-dns egress-probe
+        run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml build egress-proxy egress-dns egress-receiver egress-probe
       - name: Prove worker egress boundary
         run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml up --abort-on-container-exit --exit-code-from egress-probe egress-probe
       - name: Verify proxy logs contain no injected secret
         run: |
-          docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml logs --no-color > /tmp/phase3-egress.log
-          if grep -Fq "phase3-secret-must-not-appear" /tmp/phase3-egress.log; then
+          docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml logs --no-color > "$RUNNER_TEMP/phase3-egress.log"
+          if grep -Fq "phase3-secret-must-not-appear" "$RUNNER_TEMP/phase3-egress.log"; then
             echo "Injected destination secret appeared in container logs" >&2
             exit 1
           fi

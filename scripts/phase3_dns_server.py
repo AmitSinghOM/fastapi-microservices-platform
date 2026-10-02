@@ -1,4 +1,10 @@
-"""Controlled DNS responder used only by the Phase 3 container harness."""
+"""Controlled DNS responder used only by the Phase 3 container harness.
+
+The responder is authoritative for a fixed set of test names and never
+forwards: unknown names receive NXDOMAIN, so the harness cannot leak a lookup
+to a real resolver. "Public" answers point at the simulated receiver on an
+internal Docker network whose address is outside every production deny rule.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +12,26 @@ import ipaddress
 import socket
 import struct
 from collections import Counter
-from typing import cast
+
+RECEIVER_NAME = "receiver.public.test"
+RECEIVER_ADDRESS = "11.200.0.10"
+
+TYPE_A = 1
+TYPE_CNAME = 5
+TYPE_AAAA = 28
+FLAGS_NOERROR = 0x8580
+FLAGS_NXDOMAIN = 0x8583
+
+STATIC_ADDRESSES: dict[str, tuple[str, ...]] = {
+    RECEIVER_NAME: (RECEIVER_ADDRESS,),
+    "private.test": ("127.0.0.1",),
+    "split.test": ("127.0.0.1",),
+    "metadata.test": ("169.254.169.254",),
+    "mixed.test": (RECEIVER_ADDRESS, "127.0.0.1"),
+}
+CNAMES = {"cname.test": "private.test"}
+REBIND_NAME = "rebind.test"
+KNOWN_NAMES = frozenset({*STATIC_ADDRESSES, *CNAMES, REBIND_NAME})
 
 
 def decode_name(packet: bytes, offset: int = 12) -> tuple[str, int]:
@@ -31,7 +56,7 @@ def encode_name(name: str) -> bytes:
 
 def address_answer(owner: bytes, address: str, ttl: int = 0) -> bytes:
     ip = ipaddress.ip_address(address)
-    record_type = 1 if ip.version == 4 else 28
+    record_type = TYPE_A if ip.version == 4 else TYPE_AAAA
     packed = ip.packed
     return (
         owner + struct.pack("!HHIH", record_type, 1, ttl, len(packed)) + packed
@@ -40,7 +65,9 @@ def address_answer(owner: bytes, address: str, ttl: int = 0) -> bytes:
 
 def cname_answer(owner: bytes, target: str) -> bytes:
     encoded = encode_name(target)
-    return owner + struct.pack("!HHIH", 5, 1, 0, len(encoded)) + encoded
+    return (
+        owner + struct.pack("!HHIH", TYPE_CNAME, 1, 0, len(encoded)) + encoded
+    )
 
 
 class DnsServer:
@@ -49,49 +76,22 @@ class DnsServer:
 
     def answers(self, name: str, query_type: int) -> list[bytes]:
         owner = b"\xc0\x0c"
-        if query_type not in {1, 28}:
+        if query_type != TYPE_A:
             return []
-        if name == "rebind.test" and query_type == 1:
+        if name == REBIND_NAME:
             self.rebind_queries[name] += 1
-            address = (
-                "93.184.216.34"
-                if self.rebind_queries[name] == 1
-                else "127.0.0.1"
-            )
+            first_view = self.rebind_queries[name] == 1
+            address = RECEIVER_ADDRESS if first_view else "127.0.0.1"
             return [address_answer(owner, address)]
-        if name in {"private.test", "split.test", "metadata.test"}:
-            if query_type == 1:
-                address = (
-                    "169.254.169.254"
-                    if name == "metadata.test"
-                    else "127.0.0.1"
-                )
-                return [address_answer(owner, address)]
-            return []
-        if name == "cname.test" and query_type == 1:
-            target = "private.test"
-            return [
-                cname_answer(owner, target),
-                address_answer(encode_name(target), "127.0.0.1"),
+        if name in CNAMES:
+            target = CNAMES[name]
+            return [cname_answer(owner, target)] + [
+                address_answer(encode_name(target), address)
+                for address in STATIC_ADDRESSES[target]
             ]
-        if name == "mixed.test" and query_type == 1:
-            return [
-                address_answer(owner, "93.184.216.34"),
-                address_answer(owner, "127.0.0.1"),
-            ]
-
-        family = socket.AF_INET if query_type == 1 else socket.AF_INET6
-        try:
-            results = socket.getaddrinfo(
-                name, None, family=family, type=socket.SOCK_STREAM
-            )
-        except socket.gaierror:
-            return []
-        addresses = sorted({cast(str, result[4][0]) for result in results})
         return [
-            address_answer(owner, address, ttl=30)
-            for address in addresses
-            if ipaddress.ip_address(address).is_global
+            address_answer(owner, address)
+            for address in STATIC_ADDRESSES.get(name, ())
         ]
 
     def response(self, packet: bytes) -> bytes:
@@ -101,10 +101,11 @@ class DnsServer:
         )[0]
         question_end += 4
         answers = self.answers(name, query_type)
+        flags = FLAGS_NOERROR if name in KNOWN_NAMES else FLAGS_NXDOMAIN
         header = struct.pack(
             "!HHHHHH",
             struct.unpack("!H", packet[:2])[0],
-            0x8180,
+            flags,
             1,
             len(answers),
             0,

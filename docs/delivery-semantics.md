@@ -85,8 +85,10 @@ at-least-once contract.
 Receivers must:
 
 1. Read the exact raw request bytes before parsing JSON.
-2. Verify `Webhook-Signature` over `timestamp + "." + raw_body` using a
-   constant-time comparison.
+2. Verify `Webhook-Signature` using a constant-time comparison: `standard`
+   signs `event_id + "." + timestamp + "." + raw_body`; `legacy` signs
+   `timestamp + "." + raw_body`. Use the matching secret encoding described
+   in [the wire protocol](wire-protocol.md).
 3. Reject timestamps outside their configured tolerance.
 4. Deduplicate using `Webhook-Id` in durable storage.
 5. Make event handling idempotent, including retries after partial processing.
@@ -149,3 +151,21 @@ pytest app/tests -m postgres -q
 
 The fixture creates and drops a random schema. It never drops the database or
 its public schema. Do not point it at production.
+
+## Receiver failures and signing retirement
+
+Response diagnostics capture at most `WEBHOOK_RESPONSE_MAX_BYTES` raw wire
+bytes without decompressing receiver content. Compressed diagnostics may not
+be readable text. A stream timeout or remote protocol failure observed before
+capture stops, including after 2xx headers, is recorded as a failed attempt and
+follows the normal retry budget. Receivers must still deduplicate because they
+may already have accepted such a request. Diagnostic capture stops immediately
+at the byte cap (zero disables body reads); bytes and errors beyond that cap
+are not observed.
+
+Before each attempt, the worker checks the snapshotted signing version. Missing
+or retired versions terminate with `signing_version_unavailable` or
+`signing_version_retired`. Replay does not extend a version's retirement deadline
+and never switches accepted work to a different signing key. An attempt signed
+before retirement can already be in flight when the deadline passes; retirement
+does not retract a sent request.

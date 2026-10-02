@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -16,7 +16,12 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.config import Settings
-from app.models import Delivery, DeliveryAttempt, EndpointQuotaState
+from app.models import (
+    Delivery,
+    DeliveryAttempt,
+    EndpointQuotaState,
+    EndpointSigningSecretVersion,
+)
 from app.observability import (
     delivery_span,
     record_circuit_transition,
@@ -58,7 +63,7 @@ async def database_now(session: AsyncSession) -> datetime:
         # SQLite CURRENT_TIMESTAMP has only whole-second precision. Using it
         # would make a newly enqueued row temporarily appear not due.
         return utcnow()
-    value = await session.scalar(select(func.now()))
+    value = await session.scalar(select(func.clock_timestamp()))
     if value is None:
         raise RuntimeError("Database did not return its current time")
     if value.tzinfo is None:
@@ -86,6 +91,7 @@ class ClaimedDelivery:
     traceparent: str | None = None
     tracestate: str | None = None
     created_at: datetime = field(default_factory=utcnow)
+    signing_secret_deadline: float | None = None
 
 
 @dataclass(frozen=True)
@@ -150,6 +156,7 @@ class DeliveryService:
                 deliveries = await select_fair_deliveries(
                     session, self.settings, now, limit
                 )
+                now = await database_now(session)
                 for delivery in deliveries:
                     if delivery.status == "processing":
                         reclaimed += 1
@@ -199,18 +206,21 @@ class DeliveryService:
     async def renew_lease(self, claim: ClaimedDelivery) -> bool:
         async with self._session() as session:
             async with session.begin():
-                now = await database_now(session)
                 delivery = await session.scalar(
                     select(Delivery)
                     .where(
                         Delivery.id == claim.id,
                         Delivery.status == "processing",
                         Delivery.lease_token == claim.lease_token,
-                        Delivery.lease_expires_at > now,
                     )
                     .with_for_update()
                 )
-                if delivery is None:
+                now = await database_now(session)
+                if (
+                    delivery is None
+                    or delivery.lease_expires_at is None
+                    or aware(delivery.lease_expires_at) <= now
+                ):
                     record_lease("lost")
                     return False
                 delivery.lease_expires_at = now + timedelta(
@@ -280,6 +290,14 @@ class DeliveryService:
                         bool(self.settings.allow_http_webhooks),
                         bool(self.settings.allow_private_webhooks),
                     )
+                    if (
+                        claim.signing_secret_deadline is not None
+                        and asyncio.get_running_loop().time()
+                        >= claim.signing_secret_deadline
+                    ):
+                        return AttemptResult(
+                            False, False, None, "signing_version_retired", None
+                        )
                     if claim.signature_scheme == "standard":
                         # ADR 0002: Standard Webhooks emission. Signed
                         # content is id.timestamp.body; the key is the raw
@@ -319,6 +337,7 @@ class DeliveryService:
                             "Webhook-Signature": signature,
                             "Webhook-Event": claim.event_type,
                             "Webhook-Attempt": str(claim.attempt_number),
+                            "Accept-Encoding": "identity",
                         },
                     ) as response:
                         status_code = response.status_code
@@ -329,12 +348,17 @@ class DeliveryService:
                         )
                         remaining = self.settings.webhook_response_max_bytes
                         chunks: list[bytes] = []
-                        async for chunk in response.aiter_bytes():
-                            if remaining <= 0:
-                                break
-                            captured = chunk[:remaining]
-                            chunks.append(captured)
-                            remaining -= len(captured)
+                        if response.is_stream_consumed:
+                            # Mock transports may return content buffered before
+                            # this call; live streamed responses use raw bytes.
+                            chunks.append(response.content[:remaining])
+                        elif remaining > 0:
+                            async for chunk in response.aiter_raw():
+                                captured = chunk[:remaining]
+                                chunks.append(captured)
+                                remaining -= len(captured)
+                                if remaining <= 0:
+                                    break
                         response_body = b"".join(chunks).decode(
                             "utf-8", errors="replace"
                         )
@@ -352,7 +376,12 @@ class DeliveryService:
                     SecurityLayer.PROXY,
                     SecurityDenyReason.PROXY_CONNECT_DENIED,
                 )
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            except (
+                httpx.TimeoutException,
+                httpx.NetworkError,
+                httpx.RemoteProtocolError,
+                httpx.DecodingError,
+            ) as exc:
                 retryable = True
                 error = type(exc).__name__
             except UnsafeWebhookUrl as exc:
@@ -362,13 +391,59 @@ class DeliveryService:
                 error = type(exc).__name__
 
         return AttemptResult(
-            succeeded=(status_code is not None and 200 <= status_code < 300),
+            succeeded=(
+                error is None
+                and status_code is not None
+                and 200 <= status_code < 300
+            ),
             retryable=retryable,
             status_code=status_code,
             error=error,
             response_body=response_body,
             retry_after_seconds=retry_after_seconds,
         )
+
+    async def _attempt_with_signing_version(
+        self, claim: ClaimedDelivery
+    ) -> AttemptResult:
+        async with self._session() as session:
+            version = await session.scalar(
+                select(EndpointSigningSecretVersion).where(
+                    EndpointSigningSecretVersion.endpoint_id
+                    == claim.endpoint_id,
+                    EndpointSigningSecretVersion.version
+                    == claim.endpoint_secret_version,
+                )
+            )
+            # Anchor before the DB round trip so latency cannot extend validity.
+            checked_at = asyncio.get_running_loop().time()
+            now = await database_now(session)
+            if version is None:
+                return AttemptResult(
+                    False, False, None, "signing_version_unavailable", None
+                )
+            retire_at = version.retire_at
+            if retire_at is not None and aware(retire_at) <= now:
+                return AttemptResult(
+                    False, False, None, "signing_version_retired", None
+                )
+        deadline = (
+            checked_at + (aware(retire_at) - now).total_seconds()
+            if retire_at is not None
+            else None
+        )
+        return await self._perform_attempt(
+            replace(claim, signing_secret_deadline=deadline)
+        )
+
+    async def _bounded_attempt(self, claim: ClaimedDelivery) -> AttemptResult:
+        try:
+            async with asyncio.timeout(
+                self.settings.worker_attempt_timeout_seconds
+            ):
+                return await self._attempt_with_signing_version(claim)
+        except TimeoutError:
+            return AttemptResult(False, True, None, "attempt_timeout", None)
 
     async def deliver(self, claim: ClaimedDelivery) -> bool:
         with delivery_span(claim) as span:
@@ -379,7 +454,7 @@ class DeliveryService:
     async def _deliver_with_heartbeat(self, claim: ClaimedDelivery) -> bool:
         started = utcnow()
         heartbeat_stop = asyncio.Event()
-        attempt_task = asyncio.create_task(self._perform_attempt(claim))
+        attempt_task = asyncio.create_task(self._bounded_attempt(claim))
         heartbeat_task = asyncio.create_task(
             self._heartbeat(claim, heartbeat_stop)
         )
@@ -429,14 +504,12 @@ class DeliveryService:
     ) -> bool:
         async with self._session() as session:
             async with session.begin():
-                finished = await database_now(session)
                 delivery = await session.scalar(
                     select(Delivery)
                     .where(
                         Delivery.id == claim.id,
                         Delivery.status == "processing",
                         Delivery.lease_token == claim.lease_token,
-                        Delivery.lease_expires_at > finished,
                     )
                     .with_for_update()
                 )
@@ -452,6 +525,14 @@ class DeliveryService:
                 )
                 if endpoint_state is None:
                     raise RuntimeError("Endpoint retry state is unavailable")
+
+                finished = await database_now(session)
+                if (
+                    delivery.lease_expires_at is None
+                    or aware(delivery.lease_expires_at) <= finished
+                ):
+                    record_stale_finalization()
+                    return False
 
                 previous_circuit_state = endpoint_state.circuit_state
                 is_probe = (
