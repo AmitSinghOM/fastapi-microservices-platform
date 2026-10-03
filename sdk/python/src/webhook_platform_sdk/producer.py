@@ -216,22 +216,39 @@ class Producer(_JsonClient):
 
 
 class ManagementClient(_JsonClient):
-    """Bearer-authenticated control-plane operations used by the CLI."""
+    """Control-plane client; JWT ``token`` or machine ``api_key``, not both.
+
+    See docs/adoption-kit.md for the scope and machine-auth contract.
+    """
 
     def __init__(
         self,
         base_url: str,
-        token: str,
+        token: str | None = None,
         *,
+        api_key: str | None = None,
         timeout: httpx.Timeout | float | None = None,
         client: httpx.Client | None = None,
     ) -> None:
-        if not token:
-            raise ValueError("token is required")
+        token_given = token is not None
+        api_key_given = api_key is not None
+        if token_given == api_key_given:
+            raise ValueError(
+                "exactly one of token or api_key is required (mutually "
+                "exclusive JWT vs. machine auth)"
+            )
+        if token_given:
+            if not token:
+                raise ValueError("token must not be empty")
+            auth_header = {"Authorization": f"Bearer {token}"}
+        else:
+            if not api_key:
+                raise ValueError("api_key must not be empty")
+            auth_header = {"X-API-Key": api_key}
         super().__init__(
             base_url,
             {
-                "Authorization": f"Bearer {token}",
+                **auth_header,
                 "User-Agent": "webhook-platform-python/0.1",
             },
             timeout=timeout,
@@ -266,14 +283,18 @@ class ManagementClient(_JsonClient):
         project_id: str,
         name: str,
         *,
+        scopes: list[str] | None = None,
         expires_in_days: int | None = None,
     ) -> dict[str, Any]:
+        """Create a project API key. ``scopes`` defaults to events:write."""
         return self._request(
             "POST",
             f"/v1/projects/{project_id}/api-keys",
             json={
                 "name": name,
-                "scopes": ["events:write"],
+                "scopes": list(scopes)
+                if scopes is not None
+                else ["events:write"],
                 "expires_in_days": expires_in_days,
             },
         )
@@ -388,4 +409,13 @@ class ManagementClient(_JsonClient):
             f"/v1/projects/{project_id}/replays",
             json={"delivery_ids": delivery_ids},
             headers={"Idempotency-Key": idempotency_key},
+        )
+
+    def get_delivery_recovery(
+        self, project_id: str, delivery_id: str
+    ) -> dict[str, Any]:
+        """Read-only, advisory replay-eligibility check (see adoption-kit.md)."""
+        return self._request(
+            "GET",
+            f"/v1/projects/{project_id}/deliveries/{delivery_id}/recovery",
         )

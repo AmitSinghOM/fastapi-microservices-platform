@@ -5,13 +5,16 @@ producer, control-plane client, raw-byte receiver verification, a SQLAlchemy
 transactional outbox, and `webhookctl`. Its Python import remains
 `webhook_platform_sdk`. Python 3.11+ is required.
 
+Released versions are available from
+[PyPI](https://pypi.org/project/fastapi-microservices-platform-sdk/).
+The new scoped machine-auth and recovery APIs below are **unreleased** and
+not included in SDK 0.1.2. Install this checkout from `sdk/python`:
+
 ```bash
-python -m pip install fastapi-microservices-platform-sdk
+python -m pip install -e .
 ```
 
-Releases are published to [PyPI](https://pypi.org/project/fastapi-microservices-platform-sdk/)
-from signed `sdk-v*` tags through trusted publishing. To work on the SDK
-itself, install from a checkout instead: `python -m pip install -e .`.
+Use a matching server checkout. This change does not publish a package or tag.
 
 ```python
 from webhook_platform_sdk import Producer
@@ -57,3 +60,15 @@ subscription list with repeated `--event-type` flags, or clears it with
 `ManagementClient.create_endpoint(..., event_types=...)` and
 `ManagementClient.update_endpoint`, where passing `event_types=None`
 explicitly clears the filter.
+
+`ManagementClient` takes either a JWT `token` (positional, as above) or a
+machine `api_key` (keyword-only), never both. A machine key scoped to
+`endpoints:read`/`endpoints:write`/`deliveries:read`/`deliveries:replay` can
+access only the explicitly opted-in project routes; credential and tenant
+administration remain human-JWT-only. A human-authenticated client mints one
+with `create_api_key(..., scopes=...)` (omit `scopes` for the unchanged `events:write`
+default). `get_delivery_recovery(project_id, delivery_id)` fetches a
+read-only, advisory replay-eligibility check -- eligibility is rechecked by
+the replay call itself. See `docs/adoption-kit.md` for the full scope and
+recovery contract, and `examples/onboarding` and `examples/recovery` for
+runnable scripts.

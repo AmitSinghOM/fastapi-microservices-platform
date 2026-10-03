@@ -1,25 +1,27 @@
-"""Authentication for event ingestion, separate from JWT management auth."""
+"""Project-bound API credentials and opt-in machine management auth."""
 
 import re
 from datetime import datetime, timezone
+from typing import cast
 
 from fastapi import Depends, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_active_user, get_current_user, oauth2_scheme
 from app.admission import database_now
 from app.api_key_usage import api_key_usage_tracker
 from app.config import get_settings
 from app.db import get_db
 from app.exceptions import UnauthorizedError
-from app.models import ApiKey, Organization, Project
+from app.models import ApiKey, Organization, Project, User
+from app.principals import API_KEY_SCOPES, MachinePrincipal
 from app.webhook_security import verify_api_key
 
 _API_KEY_PATTERN = re.compile(
     r"\Awhk_(?P<prefix>[0-9a-f]{12})_[A-Za-z0-9_-]{43}\Z"
 )
 _DIGEST_PATTERN = re.compile(r"\A[0-9a-f]{64}\Z")
-_REQUIRED_SCOPE = "events:write"
 
 
 def invalid_api_key() -> UnauthorizedError:
@@ -30,10 +32,9 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-async def get_api_key_project(
-    plaintext: str | None = Header(default=None, alias="X-API-Key"),
-    db: AsyncSession = Depends(get_db),
-) -> Project:
+async def authenticate_api_key(
+    plaintext: str | None, db: AsyncSession
+) -> tuple[ApiKey, Project]:
     match = _API_KEY_PATTERN.fullmatch(plaintext or "")
     if match is None:
         raise invalid_api_key()
@@ -74,7 +75,11 @@ async def get_api_key_project(
         not api_key.is_active
         or api_key.revoked_at is not None
         or not isinstance(scopes, list)
-        or _REQUIRED_SCOPE not in scopes
+        or not scopes
+        or any(
+            not isinstance(scope, str) or scope not in API_KEY_SCOPES
+            for scope in scopes
+        )
         or (
             api_key.expires_at is not None
             and _aware(api_key.expires_at) <= now
@@ -85,4 +90,36 @@ async def get_api_key_project(
         raise invalid_api_key()
 
     await api_key_usage_tracker.record(api_key.id, now)
+    return api_key, project
+
+
+async def get_api_key_project(
+    plaintext: str | None = Header(default=None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db),
+) -> Project:
+    api_key, project = await authenticate_api_key(plaintext, db)
+    if "events:write" not in api_key.scopes:
+        raise invalid_api_key()
     return project
+
+
+async def get_management_principal(
+    plaintext: str | None = Header(default=None, alias="X-API-Key"),
+    authorization: str | None = Header(default=None),
+    token: str | None = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User | MachinePrincipal:
+    if plaintext is not None:
+        if authorization is not None:
+            raise invalid_api_key()
+        api_key, project = await authenticate_api_key(plaintext, db)
+        return MachinePrincipal(
+            cast(str, api_key.public_id),
+            cast(int, project.id),
+            frozenset(api_key.scopes),
+        )
+    return await get_current_active_user(await get_current_user(token, db))
+
+
+def management_actor(user: User | MachinePrincipal) -> int | MachinePrincipal:
+    return user if isinstance(user, MachinePrincipal) else cast(int, user.id)

@@ -17,8 +17,25 @@ Deletion-pending organizations reject mutations and API-key ingestion.
 
 ## Credential lifecycle
 
-Producer API keys have explicit scopes and expiry. `events:write` is the only
-currently supported scope. Rotation creates a new one-time plaintext key in the
+API keys have explicit scopes and expiry. `events:write` remains the default;
+existing keys gain no management permissions. Opt-in machine scopes are
+`endpoints:read`, `endpoints:write`, `deliveries:read`, and `deliveries:replay`.
+Write does not imply read. Endpoint write permits creation, updates, deactivation
+and signing-secret rotation; delivery read includes retained attempt response
+bodies but not event payload access. Replay permits only the idempotent batch
+route, including a one-item batch. Credential administration, organization and
+membership management, exports, pause/cancel/purge, and legacy single replay
+remain human-JWT operations. Supplying both credentials on a machine-enabled
+route fails closed. Machine scopes are project-bound and do not grant organization
+membership. Replay-only credentials can replay known delivery IDs without read
+access; give operator automation both read and replay scopes when it must inspect
+first. Endpoint-write credentials control every endpoint in their project,
+including destination changes and signing rotation: do not give them to browsers
+or customers sharing a project. Valid credential authentication records usage even
+when the subsequent operation is denied; `last_used_at` is not a success counter.
+See [the adoption kit](adoption-kit.md) for the route matrix.
+
+Rotation creates a new one-time plaintext key in the
 same family and shortens the old key's expiry to a bounded overlap deadline.
 Revoked, expired, unscoped, malformed, inactive-project, and deletion-pending
 credentials receive the same non-enumerating authentication failure.
@@ -36,7 +53,12 @@ Administrative mutations append a sanitized audit row in the same transaction.
 PostgreSQL rejects audit-row update and delete operations with a trigger; ORM
 schema creation installs the same protection for local integration tests.
 Audit rows intentionally use public-ID and actor snapshots without cascading
-foreign keys so organization deletion does not erase history.
+foreign keys so organization deletion does not erase history. Machine mutations
+have no human actor; sanitized metadata records `actor_type=api_key` and the
+credential's public ID as `actor_id`. This attribution is committed with the
+mutation and survives credential deletion. Replay operations link to these audit
+records through their public resource ID. Credential validity is checked per
+request: revocation stops subsequent requests, not a mutation already authorized.
 
 Audit metadata is bounded and rejects credential-, destination-, payload-, and
 response-related keys or suspicious credential values. It never stores API-key

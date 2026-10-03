@@ -20,14 +20,6 @@ from app.security_observability import reset_security_deny_counts
 
 pytest_plugins = ("pytest_asyncio",)
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-test_async_session = async_sessionmaker(
-    test_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
-
 
 @pytest.fixture(autouse=True)
 def clear_rate_limits():
@@ -40,22 +32,26 @@ def clear_rate_limits():
 
 
 @pytest_asyncio.fixture
-async def db_session() -> AsyncIterator[AsyncSession]:
+async def sqlite_session_factory(tmp_path):
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False
+    )
+    try:
+        yield async_sessionmaker(
+            engine, class_=AsyncSession, expire_on_commit=False
+        )
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_session(sqlite_session_factory) -> AsyncIterator[AsyncSession]:
     """Provide an isolated SQLite session for fast API tests."""
-    async with test_engine.begin() as connection:
+    async with sqlite_session_factory() as session:
+        connection = await session.connection()
         await connection.run_sync(Base.metadata.create_all)
-
-    async with test_async_session() as session:
+        await session.commit()
         yield session
-
-    async with test_engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
-
-
-@pytest.fixture
-def sqlite_session_factory() -> async_sessionmaker[AsyncSession]:
-    """Expose independent sessions for worker state-machine tests."""
-    return test_async_session
 
 
 @pytest_asyncio.fixture

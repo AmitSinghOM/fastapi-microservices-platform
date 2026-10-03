@@ -16,7 +16,8 @@ that already run PostgreSQL and do not want a broker or cache just for
 webhooks. [Where it fits, and where it does not →](docs/comparison.md)
 
 **New here?** [Quick start](docs/quickstart.md) · [Operations contract](docs/operations.md) ·
-[Adoption guide and SDK](docs/phase8-adoption.md) · [Changelog](CHANGELOG.md)
+[Adoption guide and SDK](docs/phase8-adoption.md) ·
+[Scoped adoption kit (unreleased)](docs/adoption-kit.md) · [Changelog](CHANGELOG.md)
 
 ## Architecture
 

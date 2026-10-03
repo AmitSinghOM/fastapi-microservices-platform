@@ -14,6 +14,7 @@ from app.models import (
     ProjectMember,
     User,
 )
+from app.principals import MachinePrincipal
 
 
 class Permission(str, Enum):
@@ -24,6 +25,8 @@ class Permission(str, Enum):
     ORG_DELETE = "org:delete"
     AUDIT_READ = "audit:read"
     PROJECT_READ = "project:read"
+    ENDPOINT_READ = "endpoints:read"
+    DELIVERY_READ = "deliveries:read"
     PROJECT_MANAGE = "project:manage"
     KEY_MANAGE = "key:manage"
     ENDPOINT_MANAGE = "endpoint:manage"
@@ -59,6 +62,8 @@ ORGANIZATION_ROLE_PERMISSIONS: dict[
 _PROJECT_ADMIN_PERMISSIONS = frozenset(
     {
         Permission.PROJECT_READ,
+        Permission.ENDPOINT_READ,
+        Permission.DELIVERY_READ,
         Permission.PROJECT_MANAGE,
         Permission.KEY_MANAGE,
         Permission.ENDPOINT_MANAGE,
@@ -73,12 +78,20 @@ PROJECT_ROLE_PERMISSIONS: dict[ProjectRole, frozenset[Permission]] = {
     ProjectRole.OPERATOR: frozenset(
         {
             Permission.PROJECT_READ,
+            Permission.ENDPOINT_READ,
+            Permission.DELIVERY_READ,
             Permission.ENDPOINT_OPERATE,
             Permission.REPLAY,
             Permission.DELIVERY_CANCEL,
         }
     ),
-    ProjectRole.VIEWER: frozenset({Permission.PROJECT_READ}),
+    ProjectRole.VIEWER: frozenset(
+        {
+            Permission.PROJECT_READ,
+            Permission.ENDPOINT_READ,
+            Permission.DELIVERY_READ,
+        }
+    ),
 }
 
 _ORGANIZATION_PERMISSIONS = frozenset(
@@ -98,6 +111,8 @@ _PENDING_READ_PERMISSIONS = frozenset(
         Permission.ORG_EXPORT,
         Permission.AUDIT_READ,
         Permission.PROJECT_READ,
+        Permission.ENDPOINT_READ,
+        Permission.DELIVERY_READ,
     }
 )
 
@@ -157,13 +172,38 @@ async def authorize_organization(
 
 async def authorize_project(
     db: AsyncSession,
-    user: User | int,
+    user: User | int | MachinePrincipal,
     project_public_id: str,
     permission: Permission,
     *,
     allow_deletion_pending: bool = False,
 ) -> Project:
     """Return a visible project after enforcing tenant and project roles."""
+    if isinstance(user, MachinePrincipal):
+        machine_row = (
+            await db.execute(
+                select(Project, Organization)
+                .join(Organization, Organization.id == Project.organization_id)
+                .where(
+                    Project.id == user.project_id,
+                    Project.public_id == project_public_id,
+                )
+            )
+        ).one_or_none()
+        if machine_row is None:
+            raise NotFoundError("Project", project_public_id)
+        project, organization = machine_row
+        scope = {
+            Permission.ENDPOINT_READ: "endpoints:read",
+            Permission.ENDPOINT_MANAGE: "endpoints:write",
+            Permission.DELIVERY_READ: "deliveries:read",
+            Permission.REPLAY: "deliveries:replay",
+        }.get(permission)
+        if scope is None or scope not in user.scopes:
+            raise ForbiddenError()
+        if not project.is_active or organization.lifecycle_state != "active":
+            raise ForbiddenError("Project is not active")
+        return project
     row = (
         await db.execute(
             select(Project, Organization, OrganizationMember.role)

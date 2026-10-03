@@ -106,3 +106,82 @@ def test_auth_and_management_onboarding_routes() -> None:
         b"username=owner%40example.com&password=password-value"
     )
     assert requests[2].headers["Authorization"] == "Bearer jwt-token"
+
+
+def test_management_client_requires_exactly_one_auth_mode() -> None:
+    with pytest.raises(ValueError):
+        ManagementClient("https://api.example")
+    with pytest.raises(ValueError):
+        ManagementClient("https://api.example", "jwt-token", api_key="whk_x")
+    with pytest.raises(ValueError):
+        ManagementClient("https://api.example", "", api_key="whk_x")
+    with pytest.raises(ValueError):
+        ManagementClient("https://api.example", "")
+    with pytest.raises(ValueError):
+        ManagementClient("https://api.example", api_key="")
+
+
+def test_management_client_machine_auth_sends_api_key_header() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"eligible_for_replay": False})
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://api.example"
+    )
+    with ManagementClient(
+        "https://ignored.example", api_key="whk_abc_producer", client=client
+    ) as management:
+        result = management.get_delivery_recovery("project-1", "delivery-1")
+
+    assert result == {"eligible_for_replay": False}
+    assert requests[0].headers["X-API-Key"] == "whk_abc_producer"
+    assert "Authorization" not in requests[0].headers
+    assert requests[0].url.path == (
+        "/v1/projects/project-1/deliveries/delivery-1/recovery"
+    )
+
+
+def test_create_api_key_defaults_scopes_to_events_write() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"public_id": "key-1"})
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://api.example"
+    )
+    with ManagementClient(
+        "https://ignored.example", "jwt-token", client=client
+    ) as management:
+        management.create_api_key("project-1", "producer")
+
+    assert json.loads(requests[0].content)["scopes"] == ["events:write"]
+
+
+def test_create_api_key_accepts_explicit_scopes() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(201, json={"public_id": "key-1"})
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://api.example"
+    )
+    with ManagementClient(
+        "https://ignored.example", "jwt-token", client=client
+    ) as management:
+        management.create_api_key(
+            "project-1",
+            "machine",
+            scopes=["endpoints:read", "deliveries:replay"],
+        )
+
+    assert json.loads(requests[0].content)["scopes"] == [
+        "endpoints:read",
+        "deliveries:replay",
+    ]

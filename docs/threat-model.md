@@ -22,6 +22,14 @@ SSRF boundary.
 1. The browser portal and management clients cross the public API boundary
    using bearer JWTs; the portal keeps its JWT only in page memory.
 2. Producers cross a separate ingestion boundary using project API keys.
+   Explicitly scoped project credentials also authenticate selected management
+   routes; the portal remains JWT-only. Machine credentials cannot administer
+   credentials, memberships, or organizations. Endpoint-write credentials may
+   change all destinations and signing versions within their project; isolate
+   customer/environment projects and keep these credentials server-side.
+   Delivery-read includes retained receiver response bodies. Replay-only keys
+   can request idempotent replay of known IDs without read access. Revocation
+   is checked per request, not a cancellation of already-authorized work.
 3. API and workers cross the database boundary with shared schema access.
 4. Workers cross DNS, proxy/firewall, Internet, and receiver boundaries.
 5. CI, dependencies, images, and maintainers cross the supply-chain boundary.

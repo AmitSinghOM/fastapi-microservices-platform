@@ -28,8 +28,9 @@ measurement is from [the benchmarks page](benchmarks.md).
   whichever comes first, with a fixed dead reason.
 - **Egress is fenced.** Application-level DNS/IP checks plus the
   CONNECT-only egress proxy deny private, link-local, metadata, and reserved
-  ranges. Deliveries never leave through an unproxied path in the Compose
-  and reference deployments.
+  ranges. The reference topology is designed to prevent unproxied delivery, but
+  this guarantee depends on deployment network controls. Run the container
+  egress gate on the actual topology; local unit tests do not prove isolation.
 - **Secrets appear once.** Endpoint signing secrets and API keys are
   returned in plaintext only at creation or rotation.
 
@@ -79,17 +80,20 @@ rows than they have free execution slots.
 | Signal (metric) | Why it matters | Starting threshold |
 | --- | --- | --- |
 | `webhook_queue_oldest_due_age_seconds` | Backlog is aging; deliveries late | > 120 s for 5 min (tighten once the SLO is met) |
-| `webhook_queue_depth` | Sustained growth means workers are under-provisioned | rising for 15 min |
-| `webhook_delivery_failures_total` rate by reason | Receiver outage or misconfiguration | any `dead` reason spike |
-| `webhook_circuit_endpoints` | Endpoints held open by the circuit breaker | > 0 for 10 min |
+| `webhook_queue_depth{kind="total"}` | Active backlog growth: inspect throughput, failures, pauses and capacity | rising for 15 min |
+| `webhook_delivery_failures_total` rate by `failure_class` | Failed attempts (not exclusively terminal deliveries) | sustained increase from pilot baseline |
+| `webhook_delivery_lifecycle_total{outcome="dead"}` | Terminal finalizations | sustained increase; inspect dead-delivery reasons |
+| `webhook_circuit_endpoints{state="open"}` | Endpoints held open by the circuit breaker | > 0 for 10 min |
 | `webhook_worker_utilization_ratio` | Saturation | > 0.9 for 10 min |
 | `webhook_db_pool_acquisition_seconds` p95 | Database pool starvation | > 0.5 s |
-| `webhook_security_denies` | SSRF/egress denials — misconfigured endpoint or probing | any sustained rate |
-| `webhook_observability_collection_failures_total` | Metrics themselves failing | > 0 |
+| `webhook_security_denies` | Process-local cumulative gauge, reset on restart | new denials; corroborate with sanitized logs |
+| `webhook_observability_collection_failures_total` | Metrics themselves failing | increase over a 5-minute window |
 
-Thresholds are starting points for a pilot, not tuned SLO alerts; the
-queue-age threshold in particular reflects the measured p95 above, not the
-target.
+Thresholds are provisional pilot starting points, not validated SLO alerts.
+Oldest runnable due age is a gauge, not the benchmark queue-age percentile;
+do not derive one threshold from the other. Account for process restarts and
+metric type, filter circuit state, and avoid summing replicated database-wide
+queue/circuit gauges. Inspect endpoint diagnostics before initiating replay.
 
 ## Operational runbooks
 
@@ -98,3 +102,4 @@ target.
 - Egress boundary and proxy: [phase 3 egress boundary](phase3-egress-boundary.md).
 - Security boundaries and accepted risks: [threat model](threat-model.md).
 - Dead-letter replay and lifecycle: see the portal or `webhookctl replay`.
+- Scoped machine onboarding and safe recovery: [adoption kit](adoption-kit.md).

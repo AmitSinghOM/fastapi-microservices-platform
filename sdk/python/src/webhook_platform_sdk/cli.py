@@ -64,6 +64,23 @@ def _parser() -> argparse.ArgumentParser:
     _add_project_id(api_key_create)
     api_key_create.add_argument("--name", required=True)
     api_key_create.add_argument("--expires-in-days", type=int)
+    api_key_create.add_argument(
+        "--scope",
+        action="append",
+        dest="scopes",
+        metavar="SCOPE",
+        choices=(
+            "events:write",
+            "endpoints:read",
+            "endpoints:write",
+            "deliveries:read",
+            "deliveries:replay",
+        ),
+        help=(
+            "repeatable scope for this key; omit for the unchanged "
+            "default of a producer-only events:write key"
+        ),
+    )
     api_key_revoke = api_key_commands.add_parser("revoke")
     _add_project_id(api_key_revoke)
     api_key_revoke.add_argument("--api-key", required=True)
@@ -147,7 +164,7 @@ def _parser() -> argparse.ArgumentParser:
     _add_project_id(delivery_list)
     delivery_list.add_argument("--offset", type=int, default=0)
     delivery_list.add_argument("--limit", type=int, default=50)
-    for action in ("get", "attempts"):
+    for action in ("get", "attempts", "recovery"):
         command = delivery_commands.add_parser(action)
         _add_project_id(command)
         command.add_argument("--delivery", required=True)
@@ -286,6 +303,7 @@ def _management_command(args: argparse.Namespace) -> Any:
                 return client.create_api_key(
                     args.project,
                     args.name,
+                    scopes=args.scopes,
                     expires_in_days=args.expires_in_days,
                 )
             return client.revoke_api_key(args.project, args.api_key)
@@ -326,6 +344,10 @@ def _management_command(args: argparse.Namespace) -> Any:
             if args.action == "list":
                 return client.list_deliveries(
                     args.project, offset=args.offset, limit=args.limit
+                )
+            if args.action == "recovery":
+                return client.get_delivery_recovery(
+                    args.project, args.delivery
                 )
             delivery = client.get_delivery(args.project, args.delivery)
             if args.action == "attempts":

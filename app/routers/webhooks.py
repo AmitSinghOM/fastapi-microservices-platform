@@ -4,10 +4,15 @@ from io import StringIO
 
 from fastapi import APIRouter, Body, Depends, Header, Query, Response, status
 
-from app.api_key_auth import get_api_key_project
+from app.api_key_auth import (
+    get_api_key_project,
+    get_management_principal,
+    management_actor,
+)
 from app.auth import get_current_active_user
 from app.dependencies import get_webhook_service
 from app.models import Project, User
+from app.principals import MachinePrincipal
 from app.schemas.webhooks import (
     ApiKeyCreate,
     ApiKeyCreated,
@@ -16,6 +21,7 @@ from app.schemas.webhooks import (
     AuditEventOut,
     DeliveryCancelRequest,
     DeliveryDetail,
+    DeliveryRecoveryOut,
     DeliveryOut,
     DeliveryPurgeOut,
     DeliveryPurgeRequest,
@@ -455,11 +461,11 @@ async def rotate_api_key(
 async def create_endpoint(
     project_id: str,
     body: EndpointCreate,
-    user: User = Depends(get_current_active_user),
+    user: User | MachinePrincipal = Depends(get_management_principal),
     service: WebhookService = Depends(get_webhook_service),
 ):
     endpoint, secret = await service.create_endpoint(
-        user.id,
+        management_actor(user),
         project_id,
         str(body.url),
         body.description,
@@ -476,10 +482,12 @@ async def create_endpoint(
 async def list_endpoints(
     project_id: str,
     pagination: tuple[int, int] = Depends(page),
-    user: User = Depends(get_current_active_user),
+    user: User | MachinePrincipal = Depends(get_management_principal),
     service: WebhookService = Depends(get_webhook_service),
 ):
-    return await service.list_endpoints(user.id, project_id, *pagination)
+    return await service.list_endpoints(
+        management_actor(user), project_id, *pagination
+    )
 
 
 @router.patch(
@@ -490,14 +498,14 @@ async def update_endpoint(
     project_id: str,
     endpoint_id: str,
     body: EndpointUpdate,
-    user: User = Depends(get_current_active_user),
+    user: User | MachinePrincipal = Depends(get_management_principal),
     service: WebhookService = Depends(get_webhook_service),
 ):
     changes = body.model_dump(exclude_unset=True)
     if changes.get("url") is not None:
         changes["url"] = str(changes["url"])
     endpoint, one_time_secret = await service.update_endpoint(
-        user.id, project_id, endpoint_id, changes
+        management_actor(user), project_id, endpoint_id, changes
     )
     data = EndpointOut.model_validate(endpoint).model_dump()
     return EndpointUpdated(**data, signing_secret=one_time_secret)
@@ -510,10 +518,12 @@ async def update_endpoint(
 async def deactivate_endpoint(
     project_id: str,
     endpoint_id: str,
-    user: User = Depends(get_current_active_user),
+    user: User | MachinePrincipal = Depends(get_management_principal),
     service: WebhookService = Depends(get_webhook_service),
 ):
-    return await service.deactivate_endpoint(user.id, project_id, endpoint_id)
+    return await service.deactivate_endpoint(
+        management_actor(user), project_id, endpoint_id
+    )
 
 
 @router.post(
@@ -523,14 +533,16 @@ async def deactivate_endpoint(
 async def rotate_endpoint_secret(
     project_id: str,
     endpoint_id: str,
-    user: User = Depends(get_current_active_user),
+    user: User | MachinePrincipal = Depends(get_management_principal),
     service: WebhookService = Depends(get_webhook_service),
 ):
     (
         endpoint,
         secret,
         previous_valid_until,
-    ) = await service.rotate_endpoint_secret(user.id, project_id, endpoint_id)
+    ) = await service.rotate_endpoint_secret(
+        management_actor(user), project_id, endpoint_id
+    )
     return EndpointSecretRotated(
         public_id=endpoint.public_id,
         secret_version=endpoint.secret_version,
@@ -585,10 +597,12 @@ async def get_event(
 async def list_deliveries(
     project_id: str,
     pagination: tuple[int, int] = Depends(page),
-    user: User = Depends(get_current_active_user),
+    user: User | MachinePrincipal = Depends(get_management_principal),
     service: WebhookService = Depends(get_webhook_service),
 ):
-    return await service.list_deliveries(user.id, project_id, *pagination)
+    return await service.list_deliveries(
+        management_actor(user), project_id, *pagination
+    )
 
 
 @router.get(
@@ -598,10 +612,12 @@ async def list_deliveries(
 async def get_delivery(
     project_id: str,
     delivery_id: str,
-    user: User = Depends(get_current_active_user),
+    user: User | MachinePrincipal = Depends(get_management_principal),
     service: WebhookService = Depends(get_webhook_service),
 ):
-    return await service.get_delivery(user.id, project_id, delivery_id)
+    return await service.get_delivery(
+        management_actor(user), project_id, delivery_id
+    )
 
 
 @router.post(
@@ -627,11 +643,11 @@ async def replay_deliveries(
     project_id: str,
     body: ReplayBatchRequest,
     idempotency_key: str = Header(alias="Idempotency-Key"),
-    user: User = Depends(get_current_active_user),
+    user: User | MachinePrincipal = Depends(get_management_principal),
     service: WebhookService = Depends(get_webhook_service),
 ):
     return await service.replay_deliveries(
-        user.id, project_id, body.delivery_ids, idempotency_key
+        management_actor(user), project_id, body.delivery_ids, idempotency_key
     )
 
 
@@ -645,11 +661,11 @@ async def list_dead_deliveries(
     reason: str | None = Query(default=None, max_length=64),
     minimum_age_seconds: int | None = Query(default=None, ge=0),
     pagination: tuple[int, int] = Depends(page),
-    user: User = Depends(get_current_active_user),
+    user: User | MachinePrincipal = Depends(get_management_principal),
     service: WebhookService = Depends(get_webhook_service),
 ):
     return await service.list_dead_deliveries(
-        user.id,
+        management_actor(user),
         project_id,
         *pagination,
         endpoint_id=endpoint_id,
@@ -788,4 +804,19 @@ async def purge_terminal_deliveries(
         project_id,
         body.dry_run,
         body.max_records,
+    )
+
+
+@router.get(
+    "/projects/{project_id}/deliveries/{delivery_id}/recovery",
+    response_model=DeliveryRecoveryOut,
+)
+async def assess_recovery(
+    project_id: str,
+    delivery_id: str,
+    user: User | MachinePrincipal = Depends(get_management_principal),
+    service: WebhookService = Depends(get_webhook_service),
+):
+    return await service.assess_recovery(
+        management_actor(user), project_id, delivery_id
     )

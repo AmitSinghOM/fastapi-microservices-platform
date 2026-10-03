@@ -99,6 +99,28 @@ The event ID remains stable across automatic attempts. An explicit replay has a
 new delivery identity linked to the original delivery; the event identity stays
 stable so receiver deduplication policy remains explicit.
 
+## Recovery assessment
+
+`GET /v1/projects/{project_id}/deliveries/{delivery_id}/recovery` is read-only
+and requires human delivery-read permission or a project credential with
+`deliveries:read`. It exposes fixed blocker/warning codes, not payloads,
+destinations, or credentials. `snapshot_preserved=true` means the operation never
+rewrites the original snapshot; it does not promise payload availability or
+successful delivery. Consult `blockers` for retention and signing failures.
+`eligible_for_replay` refers to the idempotent
+batch replay path: the source must be dead, with retained payload and an
+available, unretired signing version. It is advisory, not a reservation:
+permission, lifecycle, signing validity, retention, and admission quotas are
+checked again when replay is requested.
+
+Warnings distinguish changed endpoint configuration, current inactivity,
+paused dispatch, and a non-closed circuit. Replay still copies the original
+snapshot and event ID. Fixing a URL or rotating a secret does not redirect or
+re-sign historical work. An inactive current endpoint does not by itself
+rewrite an originally active delivery snapshot. Use the receiver's durable
+inbox and business reconciliation procedure when ordinary replay is unsuitable;
+never mint another business-event ID merely to bypass receiver deduplication.
+
 ## Provisional Phase 0 SLOs
 
 These targets are hypotheses until PostgreSQL baseline and pilot measurements

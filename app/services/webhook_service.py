@@ -47,6 +47,7 @@ from app.models import (
     User,
     WebhookEndpoint,
 )
+from app.principals import API_KEY_SCOPES, MachinePrincipal
 from app.observability import (
     current_trace_headers,
     record_enqueue,
@@ -78,7 +79,7 @@ class WebhookService:
 
     async def _audit(
         self,
-        user_id: int,
+        user_id: int | MachinePrincipal,
         organization_id: str,
         action: str,
         resource_type: str,
@@ -88,9 +89,15 @@ class WebhookService:
         project_id: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> None:
+        if isinstance(user_id, MachinePrincipal):
+            metadata = {
+                **(metadata or {}),
+                "actor_type": "api_key",
+                "actor_id": user_id.credential_id,
+            }
         event = await append_audit(
             self.db,
-            user_id,
+            None if isinstance(user_id, MachinePrincipal) else user_id,
             organization_id,
             action,
             resource_type,
@@ -1088,7 +1095,7 @@ class WebhookService:
             raise ValidationError(
                 "API key scopes must be unique and non-empty"
             )
-        if any(scope != "events:write" for scope in scopes):
+        if any(scope not in API_KEY_SCOPES for scope in scopes):
             raise ValidationError("Unsupported API key scope", "scopes")
         return list(scopes)
 
@@ -1316,7 +1323,7 @@ class WebhookService:
 
     async def create_endpoint(
         self,
-        user_id: int,
+        user_id: int | MachinePrincipal,
         project_id: str,
         url: str,
         description: str | None,
@@ -1389,10 +1396,14 @@ class WebhookService:
         )
 
     async def list_endpoints(
-        self, user_id: int, project_id: str, offset: int, limit: int
+        self,
+        user_id: int | MachinePrincipal,
+        project_id: str,
+        offset: int,
+        limit: int,
     ) -> list[WebhookEndpoint]:
         project = await authorize_project(
-            self.db, user_id, project_id, Permission.PROJECT_READ
+            self.db, user_id, project_id, Permission.ENDPOINT_READ
         )
         result = await self.db.scalars(
             select(WebhookEndpoint)
@@ -1407,7 +1418,7 @@ class WebhookService:
 
     async def update_endpoint(
         self,
-        user_id: int,
+        user_id: int | MachinePrincipal,
         project_id: str,
         endpoint_id: str,
         changes: dict[str, object],
@@ -1459,7 +1470,10 @@ class WebhookService:
         return endpoint, one_time_secret
 
     async def deactivate_endpoint(
-        self, user_id: int, project_id: str, endpoint_id: str
+        self,
+        user_id: int | MachinePrincipal,
+        project_id: str,
+        endpoint_id: str,
     ) -> WebhookEndpoint:
         project = await authorize_project(
             self.db, user_id, project_id, Permission.ENDPOINT_MANAGE
@@ -1486,7 +1500,10 @@ class WebhookService:
         return endpoint
 
     async def rotate_endpoint_secret(
-        self, user_id: int, project_id: str, endpoint_id: str
+        self,
+        user_id: int | MachinePrincipal,
+        project_id: str,
+        endpoint_id: str,
     ) -> tuple[WebhookEndpoint, str, datetime | None]:
         project = await authorize_project(
             self.db, user_id, project_id, Permission.ENDPOINT_MANAGE
@@ -1747,10 +1764,14 @@ class WebhookService:
         return event
 
     async def list_deliveries(
-        self, user_id: int, project_id: str, offset: int, limit: int
+        self,
+        user_id: int | MachinePrincipal,
+        project_id: str,
+        offset: int,
+        limit: int,
     ) -> list[Delivery]:
         project = await authorize_project(
-            self.db, user_id, project_id, Permission.PROJECT_READ
+            self.db, user_id, project_id, Permission.DELIVERY_READ
         )
         result = await self.db.scalars(
             select(Delivery)
@@ -1763,10 +1784,13 @@ class WebhookService:
         return list(result)
 
     async def get_delivery(
-        self, user_id: int, project_id: str, delivery_id: str
+        self,
+        user_id: int | MachinePrincipal,
+        project_id: str,
+        delivery_id: str,
     ) -> Delivery:
         project = await authorize_project(
-            self.db, user_id, project_id, Permission.PROJECT_READ
+            self.db, user_id, project_id, Permission.DELIVERY_READ
         )
         delivery = await self.db.scalar(
             select(Delivery)
@@ -1806,9 +1830,10 @@ class WebhookService:
             raise NotFoundError("Delivery", delivery_id)
         return delivery
 
-    async def _ensure_replayable(
+    async def _replay_blockers(
         self, delivery: Delivery, now: datetime
-    ) -> None:
+    ) -> list[str]:
+        blockers = []
         event = await self.db.get(Event, delivery.event_id)
         if (
             event is None
@@ -1816,7 +1841,7 @@ class WebhookService:
             or event.canonical_envelope is None
             or event.payload_purged_at is not None
         ):
-            raise ConflictError("Delivery event payload has been purged")
+            blockers.append("payload_purged")
         version = await self.db.scalar(
             select(EndpointSigningSecretVersion).where(
                 EndpointSigningSecretVersion.endpoint_id
@@ -1826,9 +1851,70 @@ class WebhookService:
             )
         )
         if version is None:
-            raise ConflictError("Delivery signing version is unavailable")
-        if version.retire_at is not None and _aware(version.retire_at) <= now:
-            raise ConflictError("Delivery signing version has retired")
+            blockers.append("signing_version_unavailable")
+        elif (
+            version.retire_at is not None and _aware(version.retire_at) <= now
+        ):
+            blockers.append("signing_version_retired")
+        return blockers
+
+    async def _ensure_replayable(
+        self, delivery: Delivery, now: datetime
+    ) -> None:
+        messages = {
+            "payload_purged": "Delivery event payload has been purged",
+            "signing_version_unavailable": "Delivery signing version is unavailable",
+            "signing_version_retired": "Delivery signing version has retired",
+        }
+        blockers = await self._replay_blockers(delivery, now)
+        if blockers:
+            raise ConflictError(messages[blockers[0]])
+
+    async def assess_recovery(
+        self,
+        user_id: int | MachinePrincipal,
+        project_id: str,
+        delivery_id: str,
+    ) -> dict[str, object]:
+        project = await authorize_project(
+            self.db, user_id, project_id, Permission.DELIVERY_READ
+        )
+        delivery = await self._replay_source(
+            project, delivery_id, dead_only=False, lock=False
+        )
+        blockers = await self._replay_blockers(
+            delivery, await database_now(self.db)
+        )
+        if delivery.status != "dead":
+            blockers.insert(0, "delivery_not_dead")
+        warnings = []
+        endpoint = await self._endpoint(
+            project, delivery.endpoint_public_id_snapshot
+        )
+        if (
+            endpoint.url != delivery.endpoint_url_snapshot
+            or endpoint.secret_version
+            != delivery.signing_secret_version_snapshot
+            or endpoint.signature_scheme != delivery.signature_scheme_snapshot
+            or endpoint.is_active != delivery.endpoint_active_snapshot
+        ):
+            warnings.append("endpoint_configuration_changed")
+        if not endpoint.is_active or not delivery.endpoint_active_snapshot:
+            warnings.append("endpoint_inactive")
+        state = await self.db.get(EndpointQuotaState, delivery.endpoint_id)
+        if state is not None:
+            if state.paused_at is not None:
+                warnings.append("endpoint_paused")
+            if state.circuit_state != "closed":
+                warnings.append("circuit_open")
+        return {
+            "delivery_id": delivery.public_id,
+            "status": delivery.status,
+            "eligible_for_replay": not blockers,
+            "blockers": blockers,
+            "warnings": warnings,
+            "snapshot_preserved": True,
+        }
 
     @staticmethod
     def _replay_copy(original: Delivery, now: datetime) -> Delivery:
@@ -1898,7 +1984,7 @@ class WebhookService:
 
     async def replay_deliveries(
         self,
-        user_id: int,
+        user_id: int | MachinePrincipal,
         project_id: str,
         delivery_ids: list[str],
         idempotency_key: str,
@@ -1977,7 +2063,9 @@ class WebhookService:
             public_id=str(uuid4()),
             organization_id=project.organization_id,
             project_id=project.id,
-            actor_user_id=user_id,
+            actor_user_id=None
+            if isinstance(user_id, MachinePrincipal)
+            else user_id,
             idempotency_key=idempotency_key,
             mode="single" if len(delivery_ids) == 1 else "bulk",
             requested_count=len(delivery_ids),
@@ -2042,7 +2130,7 @@ class WebhookService:
 
     async def list_dead_deliveries(
         self,
-        user_id: int,
+        user_id: int | MachinePrincipal,
         project_id: str,
         offset: int,
         limit: int,
@@ -2051,7 +2139,7 @@ class WebhookService:
         minimum_age_seconds: int | None = None,
     ) -> list[Delivery]:
         project = await authorize_project(
-            self.db, user_id, project_id, Permission.PROJECT_READ
+            self.db, user_id, project_id, Permission.DELIVERY_READ
         )
         now = (
             await database_now(self.db)

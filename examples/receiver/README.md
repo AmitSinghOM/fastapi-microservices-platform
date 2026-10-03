@@ -19,3 +19,23 @@ acceptance or application changes.
 Platform staging/production targets require public HTTPS on port 443. Use a TLS
 terminating tunnel or deployed HTTPS receiver for end-to-end platform testing;
 plain local HTTP is development-only.
+
+## Optional bearer check (defense in depth, off by default)
+
+Set `WEBHOOK_RECEIVER_BEARER_TOKEN` to additionally require
+`Authorization: Bearer <token>` before signature verification. This is
+**additive, not a replacement** for signature checking, and it is **not**
+something the platform itself satisfies: the delivery worker never sends an
+Authorization header to receivers (there is no outgoing-header feature).
+Enable it only if a trusted front door you control (gateway, sidecar, tunnel)
+injects that header for traffic reaching this app — never for traffic
+delivered directly by the platform, which will otherwise get `401`.
+
+## Adapting to another framework
+
+The verification call is framework-agnostic: pass the exact raw request
+bytes and headers to `verify_request` (or `verify_and_claim` with a durable
+deduplicator) before any JSON parsing, and treat `DuplicateEvent` as success.
+A thin adapter for Flask/Django/etc. only needs to supply those two inputs
+from its own request object and keep the same durable-insert-before-200
+ordering shown in `accept_once` above.

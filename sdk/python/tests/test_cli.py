@@ -149,9 +149,11 @@ class FakeManagementClient:
         self.calls.append(("api-key-list", project_id))
         return []
 
-    def create_api_key(self, project_id, name, *, expires_in_days=None):
+    def create_api_key(
+        self, project_id, name, *, scopes=None, expires_in_days=None
+    ):
         self.calls.append(
-            ("api-key-create", project_id, name, expires_in_days)
+            ("api-key-create", project_id, name, scopes, expires_in_days)
         )
         return {"public_id": "key-1", "plaintext_key": "one-time-key"}
 
@@ -195,6 +197,67 @@ def test_organization_and_api_key_commands_dispatch(
     assert management.calls == [
         ("organization-create", "Example"),
         ("api-key-list", "project-1"),
-        ("api-key-create", "project-1", "producer", 30),
+        ("api-key-create", "project-1", "producer", None, 30),
         ("api-key-revoke", "project-1", "key-1"),
+    ]
+
+
+def test_deliveries_recovery_command_dispatches(monkeypatch, capsys) -> None:
+    class FakeRecoveryClient(FakeManagementClient):
+        def get_delivery_recovery(self, project_id, delivery_id):
+            self.calls.append(("recovery", project_id, delivery_id))
+            return {
+                "eligible_for_replay": True,
+                "blockers": [],
+                "warnings": [],
+            }
+
+    management = FakeRecoveryClient()
+    monkeypatch.setattr(cli, "_management", lambda base_url: management)
+
+    exit_code = cli.main(
+        [
+            "deliveries",
+            "recovery",
+            "--project",
+            "project-1",
+            "--delivery",
+            "delivery-1",
+        ]
+    )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["eligible_for_replay"] is True
+    assert ("recovery", "project-1", "delivery-1") in management.calls
+
+
+def test_api_keys_create_passes_explicit_scopes(monkeypatch, capsys) -> None:
+    management = FakeManagementClient()
+    monkeypatch.setattr(cli, "_management", lambda base_url: management)
+
+    exit_code = cli.main(
+        [
+            "api-keys",
+            "create",
+            "--project",
+            "project-1",
+            "--name",
+            "machine",
+            "--scope",
+            "endpoints:read",
+            "--scope",
+            "deliveries:replay",
+        ]
+    )
+
+    assert exit_code == 0
+    capsys.readouterr()
+    assert management.calls == [
+        (
+            "api-key-create",
+            "project-1",
+            "machine",
+            ["endpoints:read", "deliveries:replay"],
+            None,
+        )
     ]

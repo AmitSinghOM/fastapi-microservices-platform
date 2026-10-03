@@ -3,12 +3,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from app.principals import ApiKeyScope
+
 STRICT = ConfigDict(extra="forbid", strict=True)
 ORM = ConfigDict(extra="forbid", strict=True, from_attributes=True)
 
 OrganizationRole = Literal["owner", "admin", "member"]
 ProjectRole = Literal["admin", "operator", "viewer"]
-ApiKeyScope = Literal["events:write"]
+
 EnvelopeMode = Literal["native", "cloudevents"]
 SignatureScheme = Literal["legacy", "standard"]
 Plan = Literal["free", "standard", "enterprise"]
@@ -465,3 +467,13 @@ class OrganizationExportOut(BaseModel):
     endpoints: list[OrganizationExportEndpoint]
     audit_events: list[AuditEventOut]
     truncated: bool
+
+
+class DeliveryRecoveryOut(BaseModel):
+    model_config = STRICT
+    delivery_id: str
+    status: DeliveryStatus
+    eligible_for_replay: bool
+    blockers: list[str]
+    warnings: list[str]
+    snapshot_preserved: Literal[True] = True

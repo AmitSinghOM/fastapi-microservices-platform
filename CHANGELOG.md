@@ -10,6 +10,14 @@ and the SDK (`sdk-vMAJOR.MINOR.PATCH`) are versioned independently.
 ### [Unreleased]
 
 #### Added
+- Opt-in project machine credentials for endpoint read/write and delivery
+  read/idempotent replay, retaining producer-only defaults and human-only
+  credential/organization administration. Machine mutations record the public
+  credential ID in existing immutable audit metadata; no schema migration.
+- Read-only delivery recovery assessments with fixed blockers and warnings;
+  accepted/replayed snapshots and business-event IDs remain unchanged.
+- Source-checkout adoption kit and SDK machine-auth/recovery helpers. These
+  additions are not in the published SDK 0.1.2 and require a future release.
 - `docs/quickstart.md`: one path from clone to a signed, verified delivery.
 - `docs/operations.md`: guarantees, non-guarantees, SLO status, capacity
   knobs, and alerting on one page.
