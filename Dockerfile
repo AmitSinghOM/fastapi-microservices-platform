@@ -1,7 +1,7 @@
 # Pinned by digest, not just tag. A floating tag means the build is not
 # reproducible and a replaced upstream tag propagates silently.
 # python:3.11-slim-bookworm
-FROM python:3.11-slim-bookworm@sha256:2e32f7d302adc1c37428355c1e646897c0c53f4fd60b6a551245fb90ee129f91 AS base
+FROM python:3.11-slim-bookworm@sha256:a83ba18aef0f865b1a4a611c2cf460fe446f2795673bbb9fe43be570439e3b39 AS base
 
 # Do not buffer stdout, and do not write .pyc into the image layer.
 ENV PYTHONUNBUFFERED=1 \
