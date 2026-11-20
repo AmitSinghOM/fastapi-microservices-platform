@@ -16,6 +16,13 @@ return `204`. SQLite is only an adoption example; production deployments should
 use their application database and commit the unique event ID with durable
 acceptance or application changes.
 
+The request body is read as a bounded stream (`WEBHOOK_RECEIVER_MAX_BODY_BYTES`,
+default 1 MiB, matching the SDK's own `DEFAULT_MAX_BODY_BYTES`) before it is
+ever joined into one buffer, so an oversized or chunked-forever body is
+rejected with `413` while still streaming in, not after it has already been
+fully allocated in memory. `verify_request` applies the same bound again as a
+second, SDK-side guard, checked before HMAC verification or JSON parsing.
+
 Platform staging/production targets require public HTTPS on port 443. Use a TLS
 terminating tunnel or deployed HTTPS receiver for end-to-end platform testing;
 plain local HTTP is development-only.

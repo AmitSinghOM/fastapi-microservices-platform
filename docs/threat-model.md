@@ -111,10 +111,25 @@ before broad multi-tenant production claims.
 Production deployments must use HTTPS, stable managed secrets, least-privilege
 database roles, encrypted backups, a trusted ingress, and worker-only egress
 controls that deny private, link-local, metadata, control-plane, database, and
-cluster networks. The ingress must enforce a request body-size limit (the
-application refuses oversized declared Content-Length values, but chunked
-bodies without a declared length are the ingress's responsibility), and the
-ASGI server behind a proxy must be configured to trust forwarded client
+cluster networks.
+
+The application itself now bounds request bodies at the raw ASGI layer,
+including chunked requests with no declared `Content-Length`: it refuses an
+oversized declared length up front, caps total buffered bytes against
+`WEBHOOK_PAYLOAD_MAX_BYTES` plus slack while reading, and enforces a total
+body-read deadline (`REQUEST_BODY_TIMEOUT_SECONDS`, default 30 s) that
+returns `408` if a client trickles bytes too slowly. This closes the
+previous chunked-body gap, but it does not replace the ingress: the ingress
+is still responsible for connection- and transport-level limits the
+application cannot see from inside an ASGI request — concurrent connection
+caps, header-size limits, raw TCP/TLS-level slow-request (slowloris)
+protection below the ASGI layer, and overall load-balancer timeouts. The
+application also has no way to attest how many API or worker replicas are
+actually running; capacity math in [operations](operations.md) and the
+autoscaling policy is only as correct as the configured replica counts
+operators supply.
+
+The ASGI server behind a proxy must be configured to trust forwarded client
 addresses (for example uvicorn's proxy-headers support); otherwise the
 per-client limiter keys every request to the proxy address and degrades into
 a single global budget for login and registration. Set

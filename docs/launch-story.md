@@ -7,8 +7,8 @@ feature table is what every competitor also has; the receipts are not.
 Positioning one-liner:
 
 > Self-hosted webhook delivery on PostgreSQL alone — no Redis, no Kafka —
-> with a one-million-delivery zero-loss correctness gate and a benchmarks
-> page that reports the target it missed.
+> with a one-million-row simulated database correctness gate and a
+> benchmarks page that reports the target it missed.
 
 ## Show HN draft
 
@@ -25,10 +25,13 @@ audit log.
 What I think is worth your click:
 
 - **Receipts over claims.** Before touching queue behavior I ran a
-  1,000,000-delivery correctness gate: zero lost jobs, zero unexplained
-  duplicates, zero accepted stale finalizations, with the reproduction
-  command in the repo. The same page reports the target I missed (queue-age
-  p95 was 134 s against a provisional 30 s SLO). docs/benchmarks.md
+  1,000,000-row simulated database correctness gate: zero lost rows, zero
+  unexplained duplicates, zero accepted stale finalizations, with the
+  reproduction command in the repo. 999,750 of those rows are a raw-SQL
+  claim/finalize simulation (no receiver call); a 250-row subset exercises
+  the real worker code path against a mocked receiver, not a real network
+  call. The same page reports the target I missed (queue-age p95 was 134 s
+  against a provisional 30 s SLO). docs/benchmarks.md
 - **Standard Webhooks compliant.** Endpoints can emit spec-exact
   signatures, cross-verified in CI by the official `standardwebhooks`
   library, so receivers verify with the same ecosystem libraries they may
@@ -57,8 +60,9 @@ attempts.
 **URL field:** https://github.com/AmitSinghOM/fastapi-microservices-platform
 
 **Claim audit (2026-09-12, at `e2df0d4`+docs):** every statement above was
-checked against the repository: Apache-2.0 (`LICENSE`); 1,000,000-delivery
-gate with zero loss and the missed 30 s p95 (134.5 s) (`docs/benchmarks.md`
+checked against the repository: Apache-2.0 (`LICENSE`); 1,000,000-row
+simulated database correctness gate with zero loss and the missed 30 s p95
+(134.5 s) (`docs/benchmarks.md`
 lines 14–46); `standardwebhooks` cross-verification
 (`app/tests/test_signature_scheme.py`); rejected dual-scheme bridge (ADR
 0002); trailing `prefix.*` wildcards (`app/schemas/webhooks.py:128`);

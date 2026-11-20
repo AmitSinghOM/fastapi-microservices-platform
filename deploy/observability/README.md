@@ -5,6 +5,11 @@ Prometheus deployment. Import the four JSON files under `grafana/`. API and
 worker targets must remain on a private monitoring network; do not publish the
 worker metrics port directly to the internet.
 
+Provision a random `METRICS_BEARER_TOKEN` (at least 32 characters) for the API
+and mount the identical value at `/run/secrets/metrics_bearer_token` in Prometheus.
+Do not commit this value. Staging/production startup requires the token; the
+worker listener remains protected by the private monitoring network.
+
 Run `postgres-monitoring-role.sql` once with an administrator after replacing
 the password placeholder. Configure `postgres_exporter` with that role and its
 built-in `stat_database`, `stat_bgwriter`, `stat_user_tables`, `locks`, `wal`,

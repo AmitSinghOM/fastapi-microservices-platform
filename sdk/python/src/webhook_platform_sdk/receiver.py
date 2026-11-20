@@ -33,11 +33,31 @@ class DuplicateEvent(ReceiverVerificationError):
         super().__init__("Webhook event was already accepted")
 
 
+class PayloadTooLarge(ReceiverVerificationError):
+    """Body exceeds ``max_body_bytes``, checked before HMAC or parsing.
+
+    A second, SDK-side guard for callers that hand ``verify_request`` an
+    already-buffered body instead of bounding their own read (compare
+    ``examples/receiver/app.py``).
+    """
+
+    def __init__(self, size: int, limit: int) -> None:
+        self.size = size
+        self.limit = limit
+        super().__init__(
+            f"Webhook body of {size} bytes exceeds the {limit}-byte limit"
+        )
+
+
 class DurableDeduplicator(Protocol):
     """Atomically reserve an event ID in durable receiver storage."""
 
     def claim(self, event_id: str) -> bool:
         """Return true only for the first durable reservation."""
+
+
+DEFAULT_MAX_BODY_BYTES = 1_048_576
+"""Default ``max_body_bytes`` (1 MiB) applied by ``verify_request``."""
 
 
 @dataclass(frozen=True)
@@ -197,6 +217,7 @@ def verify_request(
     *,
     tolerance_seconds: int = 300,
     now: int | None = None,
+    max_body_bytes: int | None = DEFAULT_MAX_BODY_BYTES,
 ) -> ReceiverEvent:
     """Verify headers and raw bytes before parsing the JSON envelope.
 
@@ -205,7 +226,13 @@ def verify_request(
     tokens verify as Standard Webhooks. Either secret serialization is
     accepted, so a receiver can upgrade this SDK before its endpoint
     switches schemes.
+
+    ``max_body_bytes`` is checked first, before HMAC or JSON parsing, so
+    an oversized body is rejected without paying either cost. Signature
+    verification still runs before parsing. Pass ``None`` to disable it.
     """
+    if max_body_bytes is not None and len(raw_body) > max_body_bytes:
+        raise PayloadTooLarge(len(raw_body), max_body_bytes)
     normalized = {name.lower(): value for name, value in headers.items()}
     signature = normalized.get("webhook-signature")
     event_id = normalized.get("webhook-id")
@@ -262,12 +289,14 @@ def verify_and_claim(
     *,
     tolerance_seconds: int = 300,
     now: int | None = None,
+    max_body_bytes: int | None = DEFAULT_MAX_BODY_BYTES,
 ) -> ReceiverEvent:
     """Verify then atomically reserve the signed event ID.
 
     The deduplicator should reserve the ID in the same durable transaction as
     receiver acceptance or application state changes. Return a successful 2xx
-    for DuplicateEvent so platform retries stop.
+    for DuplicateEvent so platform retries stop. ``max_body_bytes`` is
+    forwarded to ``verify_request`` unchanged; see its docstring.
     """
     event = verify_request(
         raw_body,
@@ -275,6 +304,7 @@ def verify_and_claim(
         secret,
         tolerance_seconds=tolerance_seconds,
         now=now,
+        max_body_bytes=max_body_bytes,
     )
     if not deduplicator.claim(event.event_id):
         raise DuplicateEvent(event.event_id)

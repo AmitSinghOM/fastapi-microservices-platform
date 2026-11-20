@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     # setup; the endpoint then refuses with 403 instead of creating
     # accounts without bound.
     registration_enabled: bool = True
+    max_organizations_per_user: int = Field(default=10, ge=1, le=10_000)
+    max_projects_per_organization: int = Field(default=100, ge=1, le=100_000)
+    metrics_bearer_token: str = Field(default="", repr=False)
     rate_limit_requests: int = Field(default=20, ge=1, le=10_000)
     rate_limit_window_seconds: int = Field(default=60, ge=1, le=86_400)
     rate_limit_max_entries: int = Field(default=10_000, ge=100, le=1_000_000)
@@ -85,6 +88,7 @@ class Settings(BaseSettings):
     http_read_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     http_write_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
     http_pool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    request_body_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     webhook_payload_max_bytes: int = Field(
         default=262_144,
         ge=1,
@@ -365,6 +369,26 @@ class Settings(BaseSettings):
             raise ValueError("DEBUG must be false in production")
         if deployed and not self.allowed_hosts:
             raise ValueError("ALLOWED_HOSTS must not be empty when deployed")
+        if self.metrics_bearer_token and len(self.metrics_bearer_token) < 32:
+            raise ValueError(
+                "METRICS_BEARER_TOKEN must be at least 32 characters"
+            )
+        if deployed and not self.metrics_bearer_token:
+            raise ValueError("METRICS_BEARER_TOKEN is required when deployed")
+        if not self.database_url.startswith(
+            ("sqlite+aiosqlite://", "postgresql+asyncpg://")
+        ):
+            raise ValueError(
+                "DATABASE_URL must use sqlite+aiosqlite or postgresql+asyncpg"
+            )
+        if deployed and not self.database_url.startswith(
+            "postgresql+asyncpg://"
+        ):
+            raise ValueError("Deployments require PostgreSQL")
+        if self.database_url.startswith("sqlite") and (
+            self.api_replica_count != 1 or self.worker_replica_count != 1
+        ):
+            raise ValueError("SQLite supports only one API and worker replica")
         return self
 
 

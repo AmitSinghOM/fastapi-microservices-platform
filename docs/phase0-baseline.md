@@ -2,9 +2,13 @@
 
 ## Result
 
-The local one-million-delivery correctness gate passed on 2026-08-18. This is
-baseline evidence, not a production capacity claim. The provisional p95 queue
-age target of 30 seconds was **not** met.
+The local one-million-row simulated database correctness gate passed on
+2026-08-18. 999,750 of the rows are a raw-SQL claim/finalize simulation with
+no receiver call, mocked or real; a 250-row subset exercises the real
+worker code path against a mocked receiver only (no real network call). This
+is baseline evidence, not a production capacity claim and not an end-to-end
+delivery benchmark. The provisional p95 queue age target of 30 seconds was
+**not** met.
 
 ## Reproduction
 
@@ -65,7 +69,14 @@ network limits, and destination behavior require the Phase 10 load matrix.
 - 999,750 bulk jobs retained for the generated bulk event.
 - Zero nonterminal rows and zero accepted stale-token finalizations.
 
-The Phase 0 durability/correctness gate therefore passed. The p95 event
+Of the 1,000,000 rows, 999,750 (the bulk jobs) are finalized by a raw-SQL
+claim/finalize simulation that marks them succeeded with a hardcoded
+response body and never invokes a receiver, mocked or real; only the 250
+real-worker rows exercise `DeliveryService` end to end against a mocked
+receiver. The gate therefore demonstrates claim/finalize correctness and
+lease-token safety under these tested one-million-row conditions — a
+single local run, not a general correctness proof — and not one-million
+real deliveries. The Phase 0 durability/correctness gate therefore passed. The p95 event
 acceptance latency hypothesis passed for this small local sample, but the p95
 oldest-job-age hypothesis failed under the one-million-job single-runtime run.
 Phase 2 and later scaling work must improve queue behavior before any queue-age

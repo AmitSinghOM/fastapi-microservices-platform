@@ -1,16 +1,39 @@
 """Minimal receiver that durably accepts each signed event once."""
 
+import asyncio
 import hmac
+import math
 import os
 import sqlite3
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from webhook_platform_sdk import ReceiverVerificationError, verify_request
+from webhook_platform_sdk import (
+    DEFAULT_MAX_BODY_BYTES,
+    ReceiverVerificationError,
+    verify_request,
+)
 
 app = FastAPI()
 secret = os.environ["WEBHOOK_SIGNING_SECRET"]
 database_path = Path(os.getenv("RECEIVER_DATABASE", "receiver.db"))
+
+# Bytes read off the wire are capped as they stream in, not after
+# buffering, regardless of Content-Length/chunked framing.
+max_body_bytes = int(
+    os.getenv("WEBHOOK_RECEIVER_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)
+)
+if max_body_bytes <= 0:
+    raise RuntimeError("WEBHOOK_RECEIVER_MAX_BODY_BYTES must be positive")
+
+# A byte cap alone does not stop a slow/stalled client from holding the
+# read open indefinitely while trickling bytes in under the cap; bound the
+# whole read by wall-clock time too.
+body_timeout_seconds = float(os.getenv("RECEIVER_BODY_TIMEOUT_SECONDS", "30"))
+if not math.isfinite(body_timeout_seconds) or body_timeout_seconds <= 0:
+    raise RuntimeError(
+        "RECEIVER_BODY_TIMEOUT_SECONDS must be a finite, positive number"
+    )
 
 # Optional, off by default, additive to signature verification -- the
 # platform never sends an Authorization header to receivers.
@@ -52,12 +75,34 @@ def accept_once(event_id: str, event_type: str, body: bytes) -> bool:
     return True
 
 
+async def _read_bounded_body(request: Request, limit: int) -> bytes:
+    """Stream into one bytearray, capped at ``limit`` bytes regardless of
+    Content-Length/chunked framing or chunk count."""
+    buffer = bytearray()
+    async for chunk in request.stream():
+        if len(buffer) + len(chunk) > limit:
+            raise HTTPException(status_code=413, detail="payload too large")
+        buffer += chunk
+    return bytes(buffer)
+
+
 @app.post("/webhooks", status_code=202)
 async def receive(request: Request) -> Response:
     _check_bearer(request)
-    raw_body = await request.body()
     try:
-        event = verify_request(raw_body, request.headers, secret)
+        async with asyncio.timeout(body_timeout_seconds):
+            raw_body = await _read_bounded_body(request, max_body_bytes)
+    except TimeoutError:
+        raise HTTPException(
+            status_code=408, detail="request body timed out"
+        ) from None
+    try:
+        event = verify_request(
+            raw_body,
+            request.headers,
+            secret,
+            max_body_bytes=max_body_bytes,
+        )
     except ReceiverVerificationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not accept_once(event.event_id, event.event_type, raw_body):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 import uuid
@@ -13,7 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import get_settings
 from app.observability import normalized_route, record_http
 
-RATE_LIMITED_PATHS = ("/auth/login", "/users/")
+RATE_LIMITED_PATHS = ("/auth/login", "/users/", "/v1/organizations")
 _HITS: dict[str, tuple[float, int]] = {}
 _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
@@ -21,37 +22,73 @@ _REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _BODY_LIMIT_SLACK_BYTES = 65_536
 
 
-class BodySizeLimitMiddleware(BaseHTTPMiddleware):
-    """Reject oversized declared bodies before JSON parsing allocates.
+class BodySizeLimitMiddleware:
+    def __init__(self, app):
+        self.app = app
 
-    The authoritative payload cap in the service layer runs after FastAPI
-    has parsed the body, so a caller with a valid key could spike memory
-    first. Requests declaring a Content-Length beyond the payload cap plus
-    slack are refused up front with 413. Chunked requests without a
-    declared length are not measured here — the deployment ingress must
-    enforce a body limit, as the operational requirements state.
-    """
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        settings = get_settings()
+        limit = settings.webhook_payload_max_bytes + _BODY_LIMIT_SLACK_BYTES
+        headers = dict(scope.get("headers", []))
+        declared = headers.get(b"content-length", b"")
 
-    async def dispatch(self, request: Request, call_next):
-        declared = request.headers.get("content-length")
-        if declared is not None and declared.isdigit():
-            limit = (
-                get_settings().webhook_payload_max_bytes
-                + _BODY_LIMIT_SLACK_BYTES
+        async def refuse():
+            response = JSONResponse(
+                status_code=413,
+                content={
+                    "error": {
+                        "code": "PAYLOAD_TOO_LARGE",
+                        "message": "Request body exceeds the configured limit",
+                    }
+                },
             )
-            if int(declared) > limit:
-                return JSONResponse(
-                    status_code=413,
-                    content={
-                        "error": {
-                            "code": "PAYLOAD_TOO_LARGE",
-                            "message": (
-                                "Request body exceeds the configured limit"
-                            ),
-                        }
-                    },
-                )
-        return await call_next(request)
+            await response(scope, receive, send)
+
+        if declared.isdigit() and (
+            len(declared) > 20 or int(declared) > limit
+        ):
+            return await refuse()
+        # Bound buffering before downstream parsers can intercept a receive error.
+        body = bytearray()
+        try:
+            async with asyncio.timeout(settings.request_body_timeout_seconds):
+                while True:
+                    message = await receive()
+                    if message["type"] == "http.disconnect":
+                        return
+                    chunk = message.get("body", b"")
+                    if len(body) + len(chunk) > limit:
+                        return await refuse()
+                    body.extend(chunk)
+                    if not message.get("more_body", False):
+                        break
+        except TimeoutError:
+            response = JSONResponse(
+                status_code=408,
+                content={
+                    "error": {
+                        "code": "REQUEST_TIMEOUT",
+                        "message": "Request body timed out",
+                    }
+                },
+            )
+            return await response(scope, receive, send)
+        delivered = False
+
+        async def bounded_receive():
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {
+                    "type": "http.request",
+                    "body": bytes(body),
+                    "more_body": False,
+                }
+            return await receive()
+
+        await self.app(scope, bounded_receive, send)
 
 
 def reset_rate_limits() -> None:

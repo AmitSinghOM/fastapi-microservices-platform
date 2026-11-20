@@ -45,13 +45,28 @@ jobs:
         run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml build egress-proxy egress-dns egress-receiver egress-probe
       - name: Prove worker egress boundary
         run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml up --abort-on-container-exit --exit-code-from egress-probe egress-probe
+      - name: Collect egress logs
+        if: always()
+        run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml logs --no-color > "$RUNNER_TEMP/phase3-egress.log"
       - name: Verify proxy logs contain no injected secret
+        if: always()
         run: |
-          docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml logs --no-color > "$RUNNER_TEMP/phase3-egress.log"
           if grep -Fq "phase3-secret-must-not-appear" "$RUNNER_TEMP/phase3-egress.log"; then
             echo "Injected destination secret appeared in container logs" >&2
             exit 1
           fi
+      - name: Upload egress logs
+        # The canary string checked above is a synthetic, non-sensitive
+        # marker, not a real secret, so retaining it in this artifact is
+        # safe; the artifact is still gated by the same repo Actions ACL as
+        # any other workflow log.
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: container-egress-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/phase3-egress.log
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Tear down test topology
         if: always()
         run: docker compose -f docker-compose.yml -f tests/egress/docker-compose.test.yml down --volumes --remove-orphans

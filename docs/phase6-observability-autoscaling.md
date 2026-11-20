@@ -3,8 +3,16 @@
 ## Contract
 
 Phase 6 exposes Prometheus text metrics from API `/metrics` and the worker's
-private metrics listener. OpenTelemetry exports sampled OTLP/HTTP spans when an
-endpoint is configured. W3C `traceparent` and `tracestate` are persisted on the
+private metrics listener. The API `/metrics` endpoint requires a
+constant-time-compared `Authorization: Bearer <METRICS_BEARER_TOKEN>` header
+whenever `METRICS_BEARER_TOKEN` is set, and that setting is mandatory (≥ 32
+characters) in staging/production; startup fails without it. The worker's
+metrics listener has no bearer check of its own and remains protected only by
+staying on a private network — do not publish it. See
+[the Prometheus scrape config](../deploy/observability/prometheus.yml) and
+[the observability README](../deploy/observability/README.md) for the
+matching `credentials_file` setup. OpenTelemetry exports sampled OTLP/HTTP
+spans when an endpoint is configured. W3C `traceparent` and `tracestate` are persisted on the
 accepted event and resumed by delivery workers. Telemetry failure never changes
 event acceptance or delivery correctness.
 

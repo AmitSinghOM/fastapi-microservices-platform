@@ -1,7 +1,14 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    field_validator,
+    model_validator,
+)
 
 from app.principals import ApiKeyScope
 
@@ -122,6 +129,30 @@ class ApiKeyCreated(ApiKeyOut):
     plaintext_key: str
 
 
+def _reject_unsafe_event_type_characters(
+    candidate: str, *, label: str
+) -> None:
+    """Printable ASCII only -- it becomes a raw ``Webhook-Event`` header."""
+    if any(not (0x20 <= ord(ch) <= 0x7E) for ch in candidate):
+        raise ValueError(
+            f"{label} must be printable ASCII with no control characters "
+            "or non-ASCII characters"
+        )
+
+
+def validate_event_type(value: str) -> str:
+    """Reject rather than strip surrounding whitespace: this value is sent
+    verbatim and matched exactly against endpoint filters."""
+    if value != value.strip():
+        raise ValueError(
+            "event type cannot have leading or trailing whitespace"
+        )
+    if not value:
+        raise ValueError("event type must not be empty")
+    _reject_unsafe_event_type_characters(value, label="event type")
+    return value
+
+
 def validate_event_type_filters(filters: list[str]) -> list[str]:
     """Normalize an endpoint's subscription list.
 
@@ -144,6 +175,9 @@ def validate_event_type_filters(filters: list[str]) -> list[str]:
             raise ValueError("each event type filter must be 1-150 characters")
         if any(ch.isspace() for ch in candidate):
             raise ValueError("event type filters cannot contain whitespace")
+        _reject_unsafe_event_type_characters(
+            candidate, label="event type filter"
+        )
         stem = candidate[:-2] if candidate.endswith(".*") else candidate
         if "*" in stem or not stem:
             raise ValueError(
@@ -240,6 +274,11 @@ class EventCreate(BaseModel):
     type: str = Field(min_length=1, max_length=150)
     payload: Any
     envelope_mode: EnvelopeMode = "native"
+
+    @field_validator("type")
+    @classmethod
+    def _validate_type(cls, value: str) -> str:
+        return validate_event_type(value)
 
 
 class EventOut(BaseModel):

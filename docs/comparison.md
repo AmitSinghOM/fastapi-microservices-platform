@@ -25,7 +25,7 @@ benchmarks page that reports the target it missed.
 | Delivery semantics | At-least-once | At-least-once | At-least-once, snapshotted immutable envelopes, lease-fenced finalization ([operations](operations.md)) |
 | Multi-tenancy, RBAC, retention | Typically tiered by plan | Varies | Included: organizations/projects, role sets, per-tenant retention, quotas and fairness |
 | Outbound network control | Vendor egress IPs | Yours | Yours: two-layer SSRF boundary with a CONNECT-only egress proxy ([egress](phase3-egress-boundary.md)); receivers can allowlist your egress IPs |
-| Evidence you can rerun | Vendor status page | Varies | One-million-delivery zero-loss gate and a scripted clone-to-verified-delivery gate ([benchmarks](benchmarks.md)) |
+| Evidence you can rerun | Vendor status page | Varies | One-million-row simulated database correctness gate and a scripted clone-to-verified-delivery gate ([benchmarks](benchmarks.md)) |
 | License / cost | Subscription | Usually open core | Apache-2.0, no paid tier |
 | Operational maturity | High | Product-dependent | **Young**: single maintainer, single-region, queue-age SLO not yet met |
 
@@ -75,8 +75,11 @@ benchmarks page that reports the target it missed.
 
 ## Honesty notes
 
-- The one-million-delivery run measured correctness, not throughput
-  ceilings; latency under backlog missed its provisional target
+- The one-million-row simulated database correctness run (999,750 rows via a
+  raw-SQL claim/finalize simulation with no receiver call, plus a 250-row
+  subset through the real worker path against a mocked receiver) measured
+  claim/finalize correctness, not real-network throughput ceilings; latency
+  under backlog missed its provisional target
   (p95 134.5 s against 30 s). This page will be updated when a measured run
   meets it, not before.
 - Feature and pricing specifics of other products are intentionally absent.

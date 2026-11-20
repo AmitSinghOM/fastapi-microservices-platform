@@ -376,6 +376,10 @@ class DeliveryService:
                     SecurityLayer.PROXY,
                     SecurityDenyReason.PROXY_CONNECT_DENIED,
                 )
+            except httpx.LocalProtocolError as exc:
+                # Our request, not the receiver's fault: terminal, unlike
+                # RemoteProtocolError below.
+                error = type(exc).__name__
             except (
                 httpx.TimeoutException,
                 httpx.NetworkError,

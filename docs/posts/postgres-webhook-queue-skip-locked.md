@@ -8,13 +8,16 @@ Verify every claim against the launch commit before posting.*
 Every "you don't need Kafka" thread ends the same way: someone posts
 `SELECT ... FOR UPDATE SKIP LOCKED` and declares the problem solved. I
 believed that too, so I built an entire webhook delivery platform on
-PostgreSQL alone — no Redis, no broker — and then ran a million deliveries
-through it with a correctness checker watching every row.
+PostgreSQL alone — no Redis, no broker — and then ran a million-row
+simulated database correctness check: 999,750 rows through a raw-SQL
+claim/finalize simulation with no receiver call at all, plus a 250-row
+subset through the real worker code path against a mocked receiver, not a
+real network call.
 
 The one-liner is real: SKIP LOCKED is a genuinely great primitive. It is
 also maybe 20% of a durable queue. This post is about the other 80% — the
-five problems that showed up on the way to a million-job run with zero lost
-work, and the one target I missed.
+five problems that showed up on the way to a million-row simulated
+correctness run with zero lost rows, and the one target I missed.
 
 ## What SKIP LOCKED actually gives you
 
@@ -54,9 +57,12 @@ WHERE id = $1 AND status = 'processing' AND lease_token = $2;
 ```
 
 Zero rows updated means you lost the race; the stale worker's result is
-discarded. In the million-job run, injected crashes produced exactly zero
-accepted stale finalizations. This token guard, not SKIP LOCKED, is the
-line that makes horizontal workers safe.
+discarded. The million-row simulated correctness run itself did not inject
+crashes — it observed zero accepted stale finalizations because nothing
+crashed. Dedicated crash-injection tests separately kill worker processes
+mid-lease and confirm the guard rejects the resulting stale finalization.
+This token guard, not SKIP LOCKED, is the line that makes horizontal
+workers safe.
 
 ## Problem 2: HTTP does not belong in a transaction
 
@@ -117,11 +123,15 @@ story above doesn't transfer to it for free.
 
 ## The receipts
 
-1,000,000 expected, persisted, succeeded deliveries; 1,000,000 unique
-attempt pairs; zero missing, zero unexplained duplicates, zero accepted
-stale finalizations; reproduction command in the repo. A scripted
-clean-machine gate goes from `git clone` to a verified signed delivery in
-about 30 seconds, and it is the release gate, not a demo.
+1,000,000 expected, persisted, succeeded rows (999,750 via a raw-SQL
+claim/finalize simulation with no receiver call, 250 via the real worker
+path against a mocked receiver); 1,000,000 unique attempt pairs; zero
+missing, zero unexplained duplicates, zero accepted stale finalizations;
+reproduction command in the repo. This demonstrates database correctness
+under these tested conditions, not a general correctness proof and not a
+one-million real-delivery benchmark. A scripted clean-machine gate
+goes from `git clone` to a verified signed delivery in about 30 seconds,
+and it is the release gate, not a demo.
 
 If you think these numbers are wrong, I'd genuinely like the issue — the
 benchmarks page exists to start that argument. *(Repo link at launch.)*

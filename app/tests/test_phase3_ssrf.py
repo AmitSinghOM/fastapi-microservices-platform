@@ -110,6 +110,8 @@ def deployed_settings(**changes) -> Settings:
         "_env_file": None,
         "environment": "production",
         "auto_create_schema": False,
+        "metrics_bearer_token": "m" * 32,
+        "database_url": "postgresql+asyncpg://test@localhost/test",
         "secret_key": "s" * 32,
         "api_key_pepper": "p" * 32,
         "webhook_signing_key": "w" * 32,

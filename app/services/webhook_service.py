@@ -4,7 +4,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -30,6 +30,7 @@ from app.exceptions import (
     ValidationError,
 )
 from app.models import (
+    AdministrativeAuditEvent,
     ApiKey,
     Delivery,
     DeliveryAttempt,
@@ -153,6 +154,20 @@ class WebhookService:
     async def create_organization(
         self, user_id: int, name: str
     ) -> Organization:
+        # A write lock also serializes creation on SQLite, where FOR UPDATE is ignored.
+        await self.db.execute(
+            update(User).where(User.id == user_id).values(id=User.id)
+        )
+        created = await self.db.scalar(
+            select(func.count())
+            .select_from(AdministrativeAuditEvent)
+            .where(
+                AdministrativeAuditEvent.actor_user_id == user_id,
+                AdministrativeAuditEvent.action == "organization.created",
+            )
+        )
+        if (created or 0) >= self.settings.max_organizations_per_user:
+            raise ForbiddenError("Organization creation limit reached")
         now = await database_now(self.db)
         organization = Organization(
             public_id=str(uuid4()),
@@ -772,6 +787,22 @@ class WebhookService:
         organization = await authorize_organization(
             self.db, user_id, organization_id, Permission.PROJECT_MANAGE
         )
+        await self.db.execute(
+            update(Organization)
+            .where(Organization.id == organization.id)
+            .values(id=Organization.id)
+        )
+        await self.db.refresh(organization)
+        organization = await authorize_organization(
+            self.db, user_id, organization_id, Permission.PROJECT_MANAGE
+        )
+        count = await self.db.scalar(
+            select(func.count())
+            .select_from(Project)
+            .where(Project.organization_id == organization.id)
+        )
+        if (count or 0) >= self.settings.max_projects_per_organization:
+            raise ForbiddenError("Project limit reached")
         now = await database_now(self.db)
         project = Project(
             public_id=str(uuid4()),
@@ -2002,6 +2033,8 @@ class WebhookService:
             1 <= len(delivery_ids) <= self.settings.bulk_replay_max_deliveries
         ):
             raise ValidationError("Replay batch size exceeds configured limit")
+        if len(set(delivery_ids)) != len(delivery_ids):
+            raise ValidationError("Replay delivery IDs must be unique")
         existing = await self.db.scalar(
             select(ReplayOperation).where(
                 ReplayOperation.project_id == project.id,
@@ -2009,7 +2042,7 @@ class WebhookService:
             )
         )
         if existing is not None:
-            if existing.source_delivery_ids != delivery_ids:
+            if set(existing.source_delivery_ids) != set(delivery_ids):
                 raise ConflictError(
                     "Idempotency-Key was already used with "
                     "different deliveries"
@@ -2026,7 +2059,7 @@ class WebhookService:
             )
         )
         if existing is not None:
-            if existing.source_delivery_ids != delivery_ids:
+            if set(existing.source_delivery_ids) != set(delivery_ids):
                 raise ConflictError(
                     "Idempotency-Key was already used with "
                     "different deliveries"

@@ -65,6 +65,46 @@ response-related keys or suspicious credential values. It never stores API-key
 plaintext/digests, signing secrets, authorization headers, destination URLs,
 payloads, or response bodies.
 
+## Organization and project creation limits
+
+`MAX_ORGANIZATIONS_PER_USER` (default 10) bounds how many organizations a
+single user account may ever create. It is a **non-refilling, lifetime**
+budget. `MAX_PROJECTS_PER_ORGANIZATION` (default 100) bounds how many
+project rows an organization may hold, counting inactive (deactivated)
+projects — it is a **stored-row cap**, not a lifetime audit-derived count,
+and would free up if a project-deletion path is added later (none exists
+today). Neither limit is a rate limit: there is no `Retry-After` and no
+replenishment window. A user or organization that hits its limit gets a
+plain `403 Forbidden` ("Organization creation limit reached" / "Project
+limit reached") on every further attempt until an operator raises the
+setting.
+
+The organization count is derived from retained `organization.created`
+audit rows for that user (`AdministrativeAuditEvent`, counted under a
+per-user row write-lock to serialize concurrent creation attempts, including
+on SQLite where `FOR UPDATE` is a no-op). Because audit history is
+append-only and survives organization transfer and deletion
+(see Immutable audit history, above), **transferring ownership or deleting
+an organization does not free up a user's organization budget** — the
+creating user's lifetime count never decreases. Migration
+`0012_audit_creation_budget` adds the `(actor_user_id, action)` index this
+count query depends on.
+
+The project count works differently: it is a live count of `Project` rows
+for the organization, not an audit-derived lifetime count. There is no
+project-deletion endpoint today — only `deactivate_project`, which sets
+`is_active=False` and does not remove the row — so in the current API
+surface the project count is also effectively non-refilling, but that is a
+consequence of there being no delete path, not an explicit lifetime-budget
+design like the organization limit.
+
+Both limits are per-account/per-organization creation ceilings, not a
+generalized claim that quota enforcement cannot be bypassed. They bound
+these two code paths (`create_organization`, `create_project`) under the
+conditions described above; they say nothing about other limits, other
+admission paths, or deployments that modify this logic.
+
+
 ## Retention, export, and deletion
 
 Each organization has a persisted plan and independent payload and response

@@ -9,9 +9,11 @@ from webhook_platform_sdk.producer import (
     WebhookPlatformError,
 )
 from webhook_platform_sdk.receiver import (
+    DEFAULT_MAX_BODY_BYTES,
     DuplicateEvent,
     DurableDeduplicator,
     InvalidSignature,
+    PayloadTooLarge,
     ReceiverEvent,
     ReceiverVerificationError,
     SignatureExpired,
@@ -23,10 +25,12 @@ from webhook_platform_sdk.receiver import (
 __all__ = [
     "ApiError",
     "AuthClient",
+    "DEFAULT_MAX_BODY_BYTES",
     "DuplicateEvent",
     "DurableDeduplicator",
     "InvalidSignature",
     "ManagementClient",
+    "PayloadTooLarge",
     "Producer",
     "ReceiverEvent",
     "ReceiverVerificationError",

@@ -656,6 +656,11 @@ class AdministrativeAuditEvent(Base):
     __tablename__ = "administrative_audit_events"
     __table_args__ = (
         Index(
+            "ix_administrative_audit_events_actor_action",
+            "actor_user_id",
+            "action",
+        ),
+        Index(
             "ix_administrative_audit_events_org_created",
             "organization_public_id",
             "created_at",

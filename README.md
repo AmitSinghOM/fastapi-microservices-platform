@@ -7,8 +7,8 @@
 **Self-hosted webhook delivery on PostgreSQL alone — no Redis, no Kafka.**
 Standard Webhooks-compliant signatures, multi-tenant fairness, audited
 dead-letter replay, an SSRF-fenced egress path, and evidence-gated releases:
-a one-million-delivery zero-loss gate and [a benchmarks page that reports
-the target it missed](docs/benchmarks.md).
+a one-million-row simulated database correctness gate and [a benchmarks page
+that reports the target it missed](docs/benchmarks.md).
 
 An open-source (Apache-2.0) alternative to hosted webhook services in the
 spirit of Svix and self-hosted gateways in the spirit of Convoy, for teams

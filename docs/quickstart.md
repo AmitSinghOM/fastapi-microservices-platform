@@ -127,8 +127,8 @@ no-op, and the receiver still has exactly one accepted event.
 - [Adoption guide](phase8-adoption.md): SDK, outbox relay, verification
   snippets in Python, JavaScript, and Go.
 - [Wire protocol](wire-protocol.md): exact header formats and golden vectors.
-- [Benchmarks](benchmarks.md): the one-million-delivery gate and the target
-  it missed.
+- [Benchmarks](benchmarks.md): the one-million-row simulated database
+  correctness gate and the target it missed.
 - [Operations](operations.md): guarantees, non-guarantees, what to alert on.
 - Docker Compose: `docker compose up --build` starts PostgreSQL, the
   migration job, the API on `:8000`, the egress proxy, and the worker.

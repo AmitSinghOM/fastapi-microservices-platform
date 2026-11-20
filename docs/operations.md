@@ -18,7 +18,9 @@ measurement is from [the benchmarks page](benchmarks.md).
 - **No duplicate finalization.** Claims are `FOR UPDATE SKIP LOCKED` with
   database-time leases (`WORKER_LEASE_SECONDS`, default 60) and
   token-guarded heartbeats; a stale worker cannot finalize work it lost.
-  The one-million-delivery gate observed zero accepted stale finalizations.
+  The one-million-row simulated database correctness gate observed zero
+  accepted stale finalizations; dedicated crash-injection tests separately
+  demonstrate stale-lease recovery under actual process kills.
 - **Bounded retries.** Only network errors, timeouts, and HTTP 408, 425,
   429, and 5xx retry. Other statuses are terminal. Backoff is capped
   exponential with full jitter (`WEBHOOK_BACKOFF_BASE_SECONDS` 1.0,
@@ -61,6 +63,11 @@ measurement is from [the benchmarks page](benchmarks.md).
 | `ENDPOINT_RETRY_RATE_PER_SECOND` / `ENDPOINT_RETRY_BURST` | 0.1 / 10 | per-endpoint retry pacing |
 | `DELIVERY_RETENTION_DAYS` | 30 | delivery rows |
 | `DEFAULT_PAYLOAD_RETENTION_DAYS` / `DEFAULT_RESPONSE_RETENTION_DAYS` | 30 / 30 | tenant-overridable payload and response bodies |
+| `MAX_ORGANIZATIONS_PER_USER` | 10 | lifetime (non-refilling) organizations a user may create; `403`, not rate-limited ([details](phase7-tenant-lifecycle.md)) |
+| `MAX_PROJECTS_PER_ORGANIZATION` | 100 | live project rows per organization; `403` once reached |
+| `REQUEST_BODY_TIMEOUT_SECONDS` | 30 | total time allowed to read a request body (declared or chunked) before `408` |
+| `WEBHOOK_PAYLOAD_MAX_BYTES` | 262144 | request body cap enforced at the raw ASGI layer, chunked bodies included |
+| `METRICS_BEARER_TOKEN` | unset | required and must be ≥ 32 characters once deployed (staging/production); startup fails otherwise |
 
 Scale API and worker replicas independently; each replica must fit within
 database connection, egress proxy, and NAT budgets. Workers never claim more

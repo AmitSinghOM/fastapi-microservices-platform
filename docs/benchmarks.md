@@ -7,17 +7,35 @@ missed. If you benchmark this platform and get different numbers, please
 open an issue with your environment — that is exactly the conversation this
 page exists to start.
 
-## The one-million-delivery correctness gate (passed)
+## The one-million-row simulated database correctness gate (passed)
 
 On a laptop-class machine (Apple arm64, 8 logical CPUs, 16 GiB, PostgreSQL
-17.10), a single API runtime and a single worker runtime processed
-**1,000,000 deliveries with zero loss and zero unexplained duplicates**:
+17.10), a single API runtime and a single worker runtime ran the
+`FOR UPDATE SKIP LOCKED` claim/finalize path at one-million-row scale, with
+most of those rows generated and finalized **without any receiver call**:
 
-- 1,000,000 expected, persisted, and succeeded delivery rows
-- 1,000,000 unique delivery IDs; zero missing or duplicate jobs
-- 1,000,000 attempt rows with unique `(delivery_id, attempt_number)` pairs
-- Zero nonterminal rows; zero accepted stale-token finalizations
-- Peak PostgreSQL connections: 11; WAL generated: 2.82 GiB
+- 999,750 rows were created directly in PostgreSQL (`generate_series` plus a
+  bulk `INSERT`) and finalized by a raw-SQL claim/finalize statement that
+  marks them succeeded with a hardcoded response body. This is a database
+  correctness and bookkeeping simulation of the claim/finalize path, not a
+  delivery attempt — no HTTP call, mocked or real, happens for these rows.
+- 250 rows went through the real `DeliveryService` worker code path against
+  an in-process **mocked** receiver (`httpx.MockTransport`, 5 ms simulated
+  latency) — not a real network call, DNS lookup, or TLS handshake.
+- Across all 1,000,000 rows: 1,000,000 expected, persisted, and succeeded
+  delivery rows; 1,000,000 unique delivery IDs with zero missing or
+  duplicate jobs; 1,000,000 attempt rows with unique
+  `(delivery_id, attempt_number)` pairs; zero nonterminal rows; zero
+  accepted stale-token finalizations.
+- Peak PostgreSQL connections: 11; WAL generated: 2.82 GiB.
+
+This demonstrates claim/finalize correctness and lease-token safety under
+the tested one-million-row conditions above — a single local run, not a
+general correctness proof across configurations, loads, or failure modes.
+It is **not** a one-million-delivery or real-network throughput result,
+and it does not substitute for the dedicated crash-injection tests, which
+separately demonstrate stale-lease recovery and stale-finalization
+rejection under actual process kills (see below).
 
 Full methodology, environment, and reproduction command:
 [Phase 0 baseline](phase0-baseline.md). Dedicated crash-injection tests

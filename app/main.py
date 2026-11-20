@@ -1,6 +1,7 @@
+import hmac
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -110,8 +111,7 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(RequestContextMiddleware)
-    # Added last so it runs first: refuse oversized declared bodies before
-    # any handler can parse them.
+    # Added last so it bounds actual bytes before any handler parses them.
     app.add_middleware(BodySizeLimitMiddleware)
 
     app.include_router(auth_router)
@@ -155,7 +155,18 @@ def create_app() -> FastAPI:
         return {"status": "healthy"}
 
     @app.get(settings.metrics_path, include_in_schema=False)
-    async def metrics() -> Response:
+    async def metrics(request: Request) -> Response:
+        if settings.metrics_bearer_token:
+            scheme, _, token = request.headers.get(
+                "authorization", ""
+            ).partition(" ")
+            if scheme.lower() != "bearer" or not hmac.compare_digest(
+                token.encode("utf-8"),
+                settings.metrics_bearer_token.encode("utf-8"),
+            ):
+                return Response(
+                    status_code=401, headers={"WWW-Authenticate": "Bearer"}
+                )
         payload, content_type = metrics_payload()
         return Response(payload, headers={"Content-Type": content_type})
 

@@ -116,6 +116,62 @@ Version 3.0.0 (the first tagged release) is the last 3.x release and contains
 the complete scheme feature with `legacy` as the default; operators who need more time can stay
 on it and opt endpoints into `standard` individually.
 
+### Unreleased upgrade notes
+
+These changes are in the working tree, not yet tagged or released; apply
+them to any environment running from this branch.
+
+- **`METRICS_BEARER_TOKEN` is required in staging/production and breaks
+  startup without it.** It must be at least 32 characters; the API refuses
+  to start (`ValueError`) if it is unset while deployed, or set but shorter
+  than 32 characters in any environment. Provision the value before
+  upgrading and mount the same value at Prometheus's
+  `credentials_file` path — see
+  [the observability README](../deploy/observability/README.md). The
+  worker's private metrics listener has no bearer check and still depends
+  on staying off any public network.
+- **Event types and event-type filters must now be printable ASCII**, with
+  no control characters, no non-ASCII characters, and no leading/trailing
+  whitespace on event types. Existing stored events and filters are not
+  revalidated, but new events or endpoints with non-ASCII or whitespace
+  event types that previously succeeded will now be rejected with a
+  validation error.
+- **The per-user organization-creation cap (`MAX_ORGANIZATIONS_PER_USER`,
+  default 10) is retroactive against existing history.** It is computed
+  from each user's lifetime count of retained `organization.created` audit
+  rows (migration `0012_audit_creation_budget`), so a user who already has
+  10 or more such audit rows before this upgrade starts out at or over the
+  limit immediately — with no grace period and no path to free budget by
+  transferring or deleting an organization.
+- **Staging and production require PostgreSQL.** `DATABASE_URL` must be a
+  `postgresql+asyncpg://` URL once `ENVIRONMENT` is `staging` or
+  `production`; `sqlite+aiosqlite://` now fails startup in those two
+  environments only — `development` and `test` may still use SQLite.
+  Regardless of environment, SQLite restricts both the API and worker to
+  exactly one replica each.
+- **Request bodies now have a total read-time deadline**
+  (`REQUEST_BODY_TIMEOUT_SECONDS`, default 30 s), enforced at the raw ASGI
+  layer alongside the existing byte-size cap, including chunked requests
+  with no declared `Content-Length`. A client that trickles bytes too
+  slowly now gets `408` instead of holding the connection open
+  indefinitely; see [the threat model](threat-model.md#operational-requirements)
+  for what the ingress is still responsible for.
+- **SDK: `verify_request`/`verify_and_claim` now reject an oversized body
+  before HMAC or JSON parsing** (new `PayloadTooLarge` exception,
+  `max_body_bytes` parameter, default 1 MiB via `DEFAULT_MAX_BODY_BYTES`).
+  This is a second, SDK-side guard for callers that hand a pre-buffered
+  body to `verify_request` instead of bounding their own read; existing
+  callers that relied on no SDK-side cap can pass `max_body_bytes=None` to
+  opt back out.
+- **SDK: `OutboxRelay` now supports SQLite** (compare-and-set claim
+  instead of `FOR UPDATE SKIP LOCKED`, which SQLite ignores) in addition
+  to the existing PostgreSQL path, and explicitly raises
+  `UnsupportedDialectError` for any other SQL dialect. This is a new
+  capability, not a regression: PostgreSQL and SQLite remain the only two
+  supported dialects for the outbox relay; no other dialect (for example
+  MySQL) was ever supported or promised.
+
+
 ## Support and vulnerabilities
 
 Only the latest 4.x release receives security fixes. A security issue may

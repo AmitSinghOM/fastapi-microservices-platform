@@ -108,6 +108,10 @@ class OutboxMessage:
     attempt_number: int
 
 
+class UnsupportedDialectError(RuntimeError):
+    """``OutboxRelay`` only supports the postgresql and sqlite dialects."""
+
+
 class OutboxRelay:
     """Claim briefly, send outside the transaction, then guard finalization."""
 
@@ -139,21 +143,51 @@ class OutboxRelay:
         self._retry_cap_seconds = retry_cap_seconds
         self._random = SystemRandom()
 
+    _SUPPORTED_DIALECTS = frozenset({"postgresql", "sqlite"})
+
+    def _unclaimed_filter(self, now: datetime):
+        return (
+            outbox_events.c.sent_at.is_(None),
+            outbox_events.c.failed_at.is_(None),
+            outbox_events.c.next_attempt_at <= now,
+            or_(
+                outbox_events.c.locked_until.is_(None),
+                outbox_events.c.locked_until <= now,
+            ),
+        )
+
     def _claim(self) -> list[OutboxMessage]:
         now = utcnow()
+        with self._session_factory() as probe:
+            dialect = probe.get_bind().dialect.name
+        if dialect not in self._SUPPORTED_DIALECTS:
+            raise UnsupportedDialectError(
+                f"OutboxRelay does not support the {dialect!r} SQL dialect; "
+                f"supported dialects are {sorted(self._SUPPORTED_DIALECTS)}."
+            )
+        if dialect == "postgresql":
+            return self._claim_for_update(now)
+        return self._claim_compare_and_set(now)
+
+    @staticmethod
+    def _to_message(row, token: str) -> OutboxMessage:
+        return OutboxMessage(
+            id=row["id"],
+            event_type=row["event_type"],
+            payload=row["payload"],
+            idempotency_key=row["idempotency_key"],
+            envelope_mode=row["envelope_mode"],
+            lease_token=token,
+            attempt_number=row["attempt_count"] + 1,
+        )
+
+    def _claim_for_update(self, now: datetime) -> list[OutboxMessage]:
+        """PostgreSQL, unchanged: ``SELECT ... FOR UPDATE SKIP LOCKED``."""
         claimed: list[OutboxMessage] = []
         with self._session_factory() as session, session.begin():
             rows = session.execute(
                 select(outbox_events)
-                .where(
-                    outbox_events.c.sent_at.is_(None),
-                    outbox_events.c.failed_at.is_(None),
-                    outbox_events.c.next_attempt_at <= now,
-                    or_(
-                        outbox_events.c.locked_until.is_(None),
-                        outbox_events.c.locked_until <= now,
-                    ),
-                )
+                .where(*self._unclaimed_filter(now))
                 .order_by(outbox_events.c.created_at, outbox_events.c.id)
                 .limit(self._batch_size)
                 .with_for_update(skip_locked=True)
@@ -170,17 +204,45 @@ class OutboxRelay:
                         attempt_count=outbox_events.c.attempt_count + 1,
                     )
                 )
-                claimed.append(
-                    OutboxMessage(
-                        id=row["id"],
-                        event_type=row["event_type"],
-                        payload=row["payload"],
-                        idempotency_key=row["idempotency_key"],
-                        envelope_mode=row["envelope_mode"],
+                claimed.append(self._to_message(row, token))
+        return claimed
+
+    def _claim_compare_and_set(self, now: datetime) -> list[OutboxMessage]:
+        """SQLite: ``with_for_update`` is a no-op there, so each row is
+        claimed by its own ``UPDATE ... WHERE`` re-checking the unclaimed
+        filter plus ``attempt_count`` equality; only ``rowcount == 1``
+        counts as claimed."""
+        with self._session_factory() as session:
+            candidates = (
+                session.execute(
+                    select(outbox_events)
+                    .where(*self._unclaimed_filter(now))
+                    .order_by(outbox_events.c.created_at, outbox_events.c.id)
+                    .limit(self._batch_size)
+                )
+                .mappings()
+                .all()
+            )
+        claimed: list[OutboxMessage] = []
+        for row in candidates:
+            token = str(uuid4())
+            with self._session_factory() as session, session.begin():
+                result = session.execute(
+                    update(outbox_events)
+                    .where(
+                        outbox_events.c.id == row["id"],
+                        outbox_events.c.attempt_count == row["attempt_count"],
+                        *self._unclaimed_filter(now),
+                    )
+                    .values(
                         lease_token=token,
-                        attempt_number=row["attempt_count"] + 1,
+                        locked_until=now
+                        + timedelta(seconds=self._lease_seconds),
+                        attempt_count=outbox_events.c.attempt_count + 1,
                     )
                 )
+            if result.rowcount == 1:
+                claimed.append(self._to_message(row, token))
         return claimed
 
     def _finish(
