@@ -1,14 +1,14 @@
-fastapi==0.142.2
+fastapi==0.163.1
 # Explicit: fastapi no longer caps starlette, and starlette carries the
 # HTTP-layer advisories (fixes through 1.3.1).
-starlette==1.7.0
-uvicorn[standard]==0.34.0
-pydantic[email]==2.10.4
-pydantic-settings==2.7.1
-sqlalchemy[asyncio]==2.0.36
-aiosqlite==0.20.0
+starlette==1.10.0
+uvicorn[standard]==0.54.0
+pydantic[email]==2.14.3
+pydantic-settings==2.16.3
+sqlalchemy[asyncio]==2.0.58
+aiosqlite==0.22.1
 httpx==0.28.1
-python-multipart==0.0.32
+python-multipart==0.0.34
 
 # Password hashing: bcrypt via passlib, replacing unsalted SHA-256.
 # bcrypt is pinned below 4.1 because passlib 1.7.4 reads bcrypt.__about__,
@@ -20,14 +20,14 @@ bcrypt==4.0.1
 PyJWT==2.15.1
 
 # Versioned migrations and production PostgreSQL async driver
-alembic==1.14.0
-asyncpg==0.30.0
+alembic==1.20.1
+asyncpg==0.32.0
 
 # Low-cardinality metrics and W3C-compatible distributed tracing.
 prometheus-client==0.26.0
-opentelemetry-api==1.44.0
-opentelemetry-sdk==1.44.0
-opentelemetry-exporter-otlp-proto-http==1.44.0
-opentelemetry-instrumentation-fastapi==0.65b0
-opentelemetry-instrumentation-sqlalchemy==0.65b0
-opentelemetry-instrumentation-httpx==0.65b0
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp-proto-http==1.45.2
+opentelemetry-instrumentation-fastapi==0.66b2
+opentelemetry-instrumentation-sqlalchemy==0.66b2
+opentelemetry-instrumentation-httpx==0.66b2
