@@ -104,7 +104,12 @@ jobs:
           python scripts/check_deployment_lock.py
           python -m pip install --require-hashes -r requirements-deploy.txt
       - name: Install pinned test dependencies
-        run: python -m pip install -r requirements-dev.txt -c requirements-deploy.txt
+        # A hashed constraints file switches pip into --require-hashes mode for
+        # the whole install, and the dev tools are not hash-locked. Constrain
+        # with the same pins minus their hashes so shared packages stay locked.
+        run: |
+          sed -e '/--hash=/d' -e 's/ *\\$//' requirements-deploy.txt > "$RUNNER_TEMP/deploy-constraints.txt"
+          python -m pip install -r requirements-dev.txt -c "$RUNNER_TEMP/deploy-constraints.txt"
       - name: Lint
         run: |
           ruff check .
